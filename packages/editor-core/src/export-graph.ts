@@ -169,8 +169,12 @@ export function buildExportPlan(project: Project, opts: ExportOptions = {}): Exp
     audioOut = "aout";
   }
 
+  // 显式输出节点（ffmpeg 用 -map 引用）
+  chains.push(`[${videoBase}]null[vout]`);
+
   const durSec = seconds(durationUs).toFixed(6);
   const outputArgs = [
+    "-map", "[vout]",
     "-t", durSec,
     "-r", String(fps),
     "-s", `${width}x${height}`,
@@ -180,7 +184,7 @@ export function buildExportPlan(project: Project, opts: ExportOptions = {}): Exp
     "-b:v", opts.videoBitrate ?? "4M",
   ];
   if (audioOut) {
-    outputArgs.push("-c:a", "aac", "-b:a", opts.audioBitrate ?? "192k");
+    outputArgs.push("-map", "[aout]", "-c:a", "aac", "-b:a", opts.audioBitrate ?? "192k");
   }
 
   const filterComplex = chains.join(";");
@@ -224,7 +228,9 @@ export function usedAssets(project: Project): MediaAsset[] {
       if (clip.assetId) used.add(clip.assetId);
     }
   }
-  return [...used].map((id) => project.assets[id]).filter(Boolean);
+  return [...used]
+    .map((id) => project.assets[id])
+    .filter((asset): asset is MediaAsset => asset !== undefined);
 }
 
 /** 项目总时长是否被有效内容覆盖（Golden 测试断言用） */

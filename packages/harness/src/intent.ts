@@ -26,8 +26,9 @@ export interface Intent {
   fromUs?: TimeUs;
 }
 
-export function parseIntent(text: string, ctx: { playheadUs?: TimeUs; selectedEntityId?: EntityId } = {}): Intent {
+export function parseIntent(text: string, ctx: { playheadUs?: TimeUs; selectedEntityId?: EntityId; fromUs?: TimeUs } = {}): Intent {
   const t = text;
+  let fromUs = ctx.fromUs;
 
   let scope: Scope = "entity_lifecycle";
   if (/第一次出现到消失|生命期|全程|同一(个)?(商品|主体|人物)|全片/.test(t)) scope = "entity_lifecycle";
@@ -35,7 +36,7 @@ export function parseIntent(text: string, ctx: { playheadUs?: TimeUs; selectedEn
     scope = "from_here";
     const m = /第\s*(\d+(?:\.\d+)?)\s*秒|从\s*(\d+(?:\.\d+)?)\s*秒/.exec(t);
     const sec = Number(m?.[1] ?? m?.[2]);
-    if (Number.isFinite(sec)) ctx.fromUs ??= Math.round(sec * 1_000_000);
+    if (Number.isFinite(sec)) fromUs = Math.round(sec * 1_000_000);
   }
   if (/此刻|当前帧|这里/.test(t)) scope = "moment";
   if (/本镜头|这个镜头|这一段/.test(t) && !/从第/.test(t)) scope = "shot";
@@ -63,7 +64,7 @@ export function parseIntent(text: string, ctx: { playheadUs?: TimeUs; selectedEn
   // 主体引用：@引用 优先，其次首个「主体名词」由上层上下文提供
   const atRef = /@[\w一-龥-]+/.exec(t)?.[0] ?? null;
 
-  return { text: t, operation, subjectRef: atRef, args, scope, fromUs: ctx.fromUs };
+  return { text: t, operation, subjectRef: atRef, args, scope, fromUs };
 }
 
 /** 从可用实体中解析 subjectRef → EntityId（BOUND 阶段） */

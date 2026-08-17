@@ -9,8 +9,9 @@ import { parseProjectFile, projectToJson, rehydrateUrls } from "./serialize";
  */
 export interface EditorAdapter {
   getProject(): Project;
-  /** 原子应用一批命令：全部预演通过后才落盘；失败则状态不变 */
-  applyCommands(commands: EditorCommand[]): ApplyResult;
+  /** 原子应用一批命令：全部预演通过后才落盘；失败则状态不变。
+   *  recordHistory=false 用于拖拽等连续手势（只落盘不入撤销栈），手势结束再以记录模式提交一次 */
+  applyCommands(commands: EditorCommand[], opts?: { recordHistory?: boolean }): ApplyResult;
   undo(): ApplyResult | null;
   redo(): ApplyResult | null;
   canUndo(): boolean;
@@ -43,7 +44,8 @@ export class LocalAdapter implements EditorAdapter {
     return this.project;
   }
 
-  applyCommands(commands: EditorCommand[]): ApplyResult {
+  applyCommands(commands: EditorCommand[], opts: { recordHistory?: boolean } = {}): ApplyResult {
+    const record = opts.recordHistory !== false;
     if (commands.length === 0) {
       return { project: this.project, inverse: { kind: "composite", commands: [] } };
     }
@@ -57,10 +59,13 @@ export class LocalAdapter implements EditorAdapter {
       inverses.unshift(result.inverse);
     }
     this.project = { ...project, revision: project.revision + 1 };
-    this.past.push({ kind: "composite", commands: inverses });
-    this.future = [];
+    const inverse = { kind: "composite", commands: inverses } as EditorCommand;
+    if (record) {
+      this.past.push(inverse);
+      this.future = [];
+    }
     this.emit();
-    return { project: this.project, inverse: this.past[this.past.length - 1]! };
+    return { project: this.project, inverse };
   }
 
   undo(): ApplyResult | null {

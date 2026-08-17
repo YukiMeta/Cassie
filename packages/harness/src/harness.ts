@@ -6,7 +6,7 @@ import {
   runGuards,
   type EditTransaction,
 } from "./compile";
-import { parseIntent, resolveSubject } from "./intent";
+import { parseIntent, resolveSubject, type Scope } from "./intent";
 import { canAdvance, FLOW, type HarnessState } from "./states";
 
 /**
@@ -43,10 +43,11 @@ export class Harness {
    */
   compile(
     intentText: string,
-    ctx: { playheadUs?: number; selectedEntityId?: string } = {},
+    ctx: { playheadUs?: number; selectedEntityId?: string; scopeOverride?: Scope } = {},
   ): EditTransaction {
     const project = this.adapter.getProject();
     const intent = parseIntent(intentText, ctx);
+    if (ctx.scopeOverride) intent.scope = ctx.scopeOverride;
     const tx: EditTransaction = {
       id: `tx_${this.transactions.length + 1}`,
       status: "DRAFT",
@@ -71,19 +72,26 @@ export class Harness {
       name: e.name,
       reference: e.reference,
     }));
-    tx.subjectId = resolveSubject(intent.subjectRef, candidates, ctx.selectedEntityId ?? null);
-    if (!tx.subjectId) {
+    const subjectId = resolveSubject(intent.subjectRef, candidates, ctx.selectedEntityId ?? null);
+    tx.subjectId = subjectId;
+    if (!subjectId) {
       return this.fail(tx, "无法解析指令中的主体：请指定实体名或 @资产引用");
     }
     this.advance(tx, "BOUND");
 
     // TRACED：主体生命周期（出现 → 消失）
-    const entity = this.semantic.entities[tx.subjectId];
+    const entity = this.semantic.entities[subjectId];
+    if (!entity) {
+      return this.fail(tx, `语义主体不存在：${subjectId}`);
+    }
+    if (entity.locked) {
+      return this.fail(tx, `硬锁：主体「${entity.name}」已锁定，禁止修改`, "BOUND");
+    }
     tx.lifecycleBefore = deriveLifecycle(entity, project);
     this.advance(tx, "TRACED");
 
     // IMPACTED：影响范围求解
-    tx.impact = analyzeImpact(this.semantic, project, tx.subjectId, intent.scope, intent.fromUs);
+    tx.impact = analyzeImpact(this.semantic, project, subjectId, intent.scope, intent.fromUs);
     this.advance(tx, "IMPACTED");
 
     // GUARDED：锁定与约束检查（时间移动类需要携带位移量）
@@ -103,7 +111,7 @@ export class Harness {
     this.advance(tx, "GUARDED");
 
     // PLANNED：编译 Editor Commands
-    const { commands } = compileCommands(tx.intent, this.semantic, project, tx.subjectId, tx.impact);
+    const { commands } = compileCommands(tx.intent, this.semantic, project, subjectId, tx.impact);
     if (commands.length === 0) {
       return this.fail(tx, "没有可编译的修改：主体在请求范围内没有绑定片段", "PLANNED");
     }

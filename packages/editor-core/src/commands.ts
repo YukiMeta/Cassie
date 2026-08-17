@@ -6,7 +6,9 @@ import {
   type Clip,
   type ClipAttrs,
   type ClipId,
+  type MediaAsset,
   type Project,
+  type Track,
   type TrackId,
 } from "./project";
 import type { TimeUs } from "./time";
@@ -22,11 +24,19 @@ export type EditorCommand =
   | MoveClipCommand
   | ReplaceMediaCommand
   | SetClipAssetCommand
+  | SetAssetCommand
   | SetClipRangeCommand
   | SetClipAttrsCommand
   | AddClipCommand
   | RemoveClipCommand
   | CompositeCommand;
+
+export interface SetAssetCommand {
+  kind: "setAsset";
+  /** 资产 id；asset 为 null = 移除该资产 */
+  assetId: string;
+  asset: MediaAsset | null;
+}
 
 export interface SplitClipCommand {
   kind: "splitClip";
@@ -248,6 +258,17 @@ function executeInPlace(project: Project, cmd: EditorCommand): EditorCommand {
       return { kind: "setClipAsset", clipId: clip.id, assetId: old };
     }
 
+    case "setAsset": {
+      const old = project.assets[cmd.assetId] ?? null;
+      if (cmd.asset === null) {
+        delete project.assets[cmd.assetId];
+      } else {
+        if (cmd.asset.id !== cmd.assetId) throw new CommandError(`资产 id 不一致: ${cmd.asset.id} ≠ ${cmd.assetId}`);
+        project.assets[cmd.assetId] = structuredClone(cmd.asset);
+      }
+      return { kind: "setAsset", assetId: cmd.assetId, asset: old ? structuredClone(old) : null };
+    }
+
     case "setClipRange": {
       const { track, index, clip } = locate(project, cmd.clipId);
       const old = { startUs: clip.startUs, endUs: clip.endUs, sourceInUs: clip.sourceInUs };
@@ -333,6 +354,15 @@ export function setClipRangeCmd(
 }
 export function setClipAttrsCmd(clipId: ClipId, attrs: ClipAttrs, replace = false): SetClipAttrsCommand {
   return { kind: "setClipAttrs", clipId, attrs, replace };
+}
+export function addClipCmd(clip: Clip, trackId: TrackId, index?: number): AddClipCommand {
+  return { kind: "addClip", trackId, clip, index };
+}
+export function removeClipCmd(clipId: ClipId): RemoveClipCommand {
+  return { kind: "removeClip", clipId };
+}
+export function setAssetCmd(asset: MediaAsset): SetAssetCommand {
+  return { kind: "setAsset", assetId: asset.id, asset };
 }
 export function compositeCmd(commands: EditorCommand[]): CompositeCommand {
   return { kind: "composite", commands };

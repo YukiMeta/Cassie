@@ -223,7 +223,7 @@ export function compileCommands(
       break;
     }
     case "set_attrs": {
-      const attrs = (intent.args.attrs as Record<string, unknown>) ?? {};
+      const attrs = (intent.args.attrs as unknown as Record<string, unknown>) ?? {};
       for (const clip of clips) {
         commands.push({ kind: "setClipAttrs", clipId: clip.id, attrs });
       }

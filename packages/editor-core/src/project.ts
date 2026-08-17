@@ -116,7 +116,7 @@ export function createClip(partial: {
   attrs?: ClipAttrs;
 }): Clip {
   return {
-    id: nanoid(10),
+    id: newClipId(),
     assetId: partial.assetId,
     startUs: partial.startUs,
     endUs: partial.endUs,
@@ -125,11 +125,16 @@ export function createClip(partial: {
   };
 }
 
+/** 生成新的片段 ID；由导入、分割和上层适配器共享。 */
+export function newClipId(): ClipId {
+  return nanoid(10);
+}
+
 export function cloneClip(clip: Clip, id = nanoid(10)): Clip {
   return {
     ...clip,
     id,
-    attrs: { ...clip.attrs, appearance: { ...clip.appearance } },
+    attrs: { ...clip.attrs, appearance: clip.attrs.appearance ? { ...clip.attrs.appearance } : undefined },
     meta: clip.meta ? { ...clip.meta } : undefined,
   };
 }

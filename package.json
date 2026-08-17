@@ -8,8 +8,8 @@
   "scripts": {
     "dev": "npm run dev -w @cassie/web",
     "build": "npm run build -w @cassie/web",
-    "test": "vitest run -w tests",
-    "test:watch": "vitest -w tests",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
