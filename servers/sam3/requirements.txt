@@ -1,0 +1,10 @@
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+pydantic>=2.6
+opencv-python>=4.9
+numpy
+torch>=2.3
+# SAM 3 本体按官方仓库安装（权重需在 Hugging Face 申请）：
+#   git clone https://github.com/facebookresearch/sam3 && cd sam3 && pip install -e .
+# 详见 README.md

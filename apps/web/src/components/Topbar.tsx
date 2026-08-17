@@ -2,6 +2,7 @@ import { exportVideo } from "../export";
 import {
   redo,
   setExporting,
+  setSettingsOpen,
   setToast,
   undo,
   useAppState,
@@ -73,7 +74,17 @@ export function Topbar() {
         >
           ↷
         </button>
+        <button
+          className="ghost-btn parse-mode-chip"
+          title={state.parseMode === "llm" ? "意图解析：用户配置的 LLM" : "意图解析：本地确定性（未配置模型）"}
+          onClick={() => setSettingsOpen(true)}
+        >
+          {state.parseMode === "llm" ? "⚡ LLM" : "▣ 本地解析"}
+        </button>
         <button className="ghost-btn version-chip">版本 {String(project.revision).padStart(2, "0")}</button>
+        <button className="ghost-btn" onClick={() => setSettingsOpen(true)} title="模型设置（BYOK）">
+          ⚙ 模型
+        </button>
         <button className="primary-btn" onClick={() => void handleExport()} disabled={state.exporting}>
           {state.exporting ? "渲染中…" : "导出成片"}
         </button>

@@ -21,8 +21,9 @@ import {
   type Project,
   type TimeUs,
 } from "@cassie/editor-core";
-import { Harness, type EditTransaction, type Scope } from "@cassie/harness";
-import type { EntityId, SemanticProject } from "@cassie/spec";
+import { Harness, parseIntent, type EditTransaction, type Intent, type Scope } from "@cassie/harness";
+import { llmParseIntent, type LlmConfig, type VisionConfig } from "./lib/model-client";
+import type { EntityId, SemanticEntity, SemanticProject } from "@cassie/spec";
 
 /**
  * 应用状态。所有变更走 EditorAdapter（可撤销），Harness 负责语义事务。
@@ -46,6 +47,19 @@ export interface AppState {
   safeFrame: boolean;
   /** 舞台预览缩放（0.5–2） */
   stageZoom: number;
+  /** 用户自填模型配置（BYOK，localStorage 持久化） */
+  modelConfig: ModelConfigState;
+  /** 设置面板是否打开 */
+  settingsOpen: boolean;
+  /** 意图解析模式：llm = 走用户配置的模型（失败回退），deterministic = 关键词 */
+  parseMode: "llm" | "deterministic";
+  /** LLM 解析进行中（UI 用） */
+  parsing: boolean;
+}
+
+export interface ModelConfigState {
+  llm: LlmConfig;
+  vision: VisionConfig;
 }
 
 let state: AppState;
@@ -106,6 +120,10 @@ export function initStore(): void {
     snapEnabled: true,
     safeFrame: true,
     stageZoom: 1,
+    modelConfig: loadModelConfig(),
+    settingsOpen: false,
+    parseMode: "llm",
+    parsing: false,
   };
   adapter.subscribe(() => emit());
 
@@ -155,6 +173,22 @@ export function toggleEntityLock(entityId: EntityId): void {
   entity.locked = !entity.locked;
   state.harness.setSemantic(state.semantic);
   setToast(entity.locked ? `${entity.name} 已锁定（编译将阻断）` : `${entity.name} 已解锁`);
+}
+
+/** 语义提取结果落库：注册实体（绑定 clip）并同步 Harness */
+export function addSemanticEntities(entities: SemanticEntity[]): number {
+  let added = 0;
+  for (const e of entities) {
+    if (state.semantic.entities[e.id]) continue;
+    state.semantic.entities[e.id] = e;
+    added++;
+  }
+  if (added > 0) {
+    state.harness.setSemantic(state.semantic);
+    autosave();
+    emit();
+  }
+  return added;
 }
 
 export function selectClip(clipId: ClipId | null): void {
@@ -209,6 +243,51 @@ export function toggleSafeFrame(): void {
 
 export function setStageZoom(zoom: number): void {
   state.stageZoom = Math.max(0.5, Math.min(2, zoom));
+  emit();
+}
+
+// ---------- 模型配置（BYOK） ----------
+
+const MODEL_CONFIG_KEY = "cassie:model-config";
+
+export function loadModelConfig(): ModelConfigState {
+  const defaults: ModelConfigState = {
+    llm: {
+      enabled: false,
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "",
+      model: "deepseek-chat",
+    },
+    vision: { enabled: false, baseUrl: "http://localhost:8000", apiKey: "" },
+  };
+  try {
+    const raw = localStorage.getItem(MODEL_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<ModelConfigState>;
+      return {
+        llm: { ...defaults.llm, ...(parsed.llm ?? {}) },
+        vision: { ...defaults.vision, ...(parsed.vision ?? {}) },
+      };
+    }
+  } catch {
+    // 配置损坏时用默认值
+  }
+  return defaults;
+}
+
+export function saveModelConfig(config: ModelConfigState): void {
+  state.modelConfig = config;
+  state.parseMode = config.llm.enabled ? "llm" : "deterministic";
+  try {
+    localStorage.setItem(MODEL_CONFIG_KEY, JSON.stringify(config));
+  } catch {
+    // localStorage 满时静默降级
+  }
+  emit();
+}
+
+export function setSettingsOpen(open: boolean): void {
+  state.settingsOpen = open;
   emit();
 }
 
@@ -343,6 +422,46 @@ export function compileIntent(text: string, scopeOverride?: Scope): EditTransact
     selectedEntityId: state.selectedEntityId ?? undefined,
     scopeOverride,
   });
+  state.transactions = state.harness.listTransactions();
+  emit();
+  return tx;
+}
+
+/**
+ * 智能编译：配置了 LLM 时走模型解析（失败自动回退确定性解析器）。
+ * parseMode=deterministic 或未配置 key 时直接走确定性路径。
+ */
+export async function compileIntentSmart(text: string, scopeOverride?: Scope): Promise<EditTransaction> {
+  const ctx = {
+    playheadUs: state.playheadUs,
+    selectedEntityId: state.selectedEntityId ?? undefined,
+  };
+  let intent: Intent;
+  if (state.parseMode === "llm" && state.modelConfig.llm.enabled && state.modelConfig.llm.apiKey) {
+    state.parsing = true;
+    emit();
+    try {
+      intent = await llmParseIntent(state.modelConfig.llm, text, {
+        playheadUs: state.playheadUs,
+        entities: Object.values(state.semantic.entities).map((e) => ({
+          id: e.id,
+          name: e.name,
+          reference: e.reference,
+        })),
+      });
+      setToast(`已用 ${state.modelConfig.llm.model} 解析意图`);
+    } catch (err) {
+      setToast(`模型解析失败，回退本地解析：${err instanceof Error ? err.message.slice(0, 80) : "未知错误"}`);
+      intent = parseIntent(text, ctx);
+    } finally {
+      state.parsing = false;
+      emit();
+    }
+  } else {
+    intent = parseIntent(text, ctx);
+  }
+  if (scopeOverride) intent.scope = scopeOverride;
+  const tx = state.harness.compileFromIntent(intent, ctx);
   state.transactions = state.harness.listTransactions();
   emit();
   return tx;

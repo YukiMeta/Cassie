@@ -5,6 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { AgentPanel } from "./components/AgentPanel";
 import { Timeline } from "./components/Timeline";
+import { SettingsModal } from "./components/SettingsModal";
 
 /** 面板宽度（px），可拖拽分隔条调整 */
 const PANEL_LIMITS = { sidebar: { min: 200, max: 430 }, agent: { min: 260, max: 560 } };
@@ -99,6 +100,7 @@ export function App() {
         <Timeline />
       </main>
       {state.toast && <div className="toast visible">{state.toast}</div>}
+      {state.settingsOpen && <SettingsModal />}
     </>
   );
 }

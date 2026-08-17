@@ -227,7 +227,61 @@ try {
   await dragMouse({ x: divider2.x + divider2.w / 2, y: divider2.y + 60 }, { x: divider2.x + divider2.w / 2 - 40, y: divider2.y + 60 }, 6);
   await sleep(300);
 
-  console.log(failures === 0 ? "\nE2E 垂直切片 + 交互排查 全部通过 ✅" : `\n${failures} 项失败 ❌`);
+  // ---------- 模型 BYOK ----------
+
+  // 13. 设置面板：打开 → 两个模型槽位 → 关闭
+  await evalJS(`[...document.querySelectorAll(".top-actions .ghost-btn")].find(b => b.textContent.includes("模型")).click()`);
+  await sleep(400);
+  const modalOpen = await evalJS(`!!document.querySelector(".settings-modal")`);
+  const hasLlm = await evalJS(`document.querySelector(".settings-modal")?.textContent.includes("语义模型")`);
+  const hasVision = await evalJS(`document.querySelector(".settings-modal")?.textContent.includes("SAM 3")`);
+  assert(modalOpen && hasLlm && hasVision, "设置面板：LLM + SAM 3 槽位齐全");
+  await evalJS(`document.querySelector(".settings-modal .icon-btn").click()`);
+  await sleep(300);
+  assert(await evalJS(`!document.querySelector(".settings-modal")`), "设置面板可关闭");
+
+  // 14. 提取流程入口：未配置视觉服务时引导设置
+  await evalJS(`document.querySelector(".extract-toggle").click()`);
+  await sleep(300);
+  const extractHint = await evalJS(`document.querySelector(".extract-body")?.textContent`);
+  assert(extractHint?.includes("先配置"), "提取入口未配置时引导去设置", extractHint?.slice(0, 40));
+  await evalJS(`document.querySelector(".extract-toggle").click()`);
+  await sleep(200);
+
+  // 15. LLM 回退：填入无效配置 → 解析走模型失败 → 自动回退确定性解析，事务仍可编译
+  await evalJS(`[...document.querySelectorAll(".top-actions .ghost-btn")].find(b => b.textContent.includes("模型")).click()`);
+  await sleep(400);
+  await evalJS(`document.querySelector(".settings-section .switch input").click()`);
+  await sleep(200);
+  await evalJS(`(() => {
+    const inputs = document.querySelectorAll(".settings-fields input");
+    inputs[0].value = "https://api.deepseek.com/v1";
+    inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+    inputs[1].value = "deepseek-chat";
+    inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+    inputs[2].value = "sk-invalid-test-key";
+    inputs[2].dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await sleep(300);
+  await evalJS(`[...document.querySelectorAll(".settings-modal .modal-actions button")].find(b => b.textContent.includes("保存")).click()`);
+  await sleep(400);
+  const modeChip = await evalJS(`document.querySelector(".parse-mode-chip")?.textContent`);
+  assert(modeChip?.includes("LLM"), "保存后解析模式 = LLM", modeChip);
+  // 输入一个确定性可解析的指令 → LLM 失败回退 → PLANNED
+  await evalJS(`document.querySelectorAll(".quick-prompts button")[1].click()`);
+  await evalJS(`document.querySelector(".plan-btn").click()`);
+  await sleep(4000); // 等模型调用超时/失败 + 回退
+  const fallbackStatus = await evalJS(`document.querySelector(".agent-status")?.textContent`);
+  assert(fallbackStatus === "PLANNED" || fallbackStatus === "需要修正", "LLM 失败自动回退确定性解析", fallbackStatus);
+  // 恢复为未配置（保证后续运行不受影响）
+  await evalJS(`[...document.querySelectorAll(".top-actions .ghost-btn")].find(b => b.textContent.includes("模型")).click()`);
+  await sleep(400);
+  await evalJS(`document.querySelector(".settings-section .switch input").click()`);
+  await sleep(200);
+  await evalJS(`[...document.querySelectorAll(".settings-modal .modal-actions button")].find(b => b.textContent.includes("保存")).click()`);
+  await sleep(400);
+
+  console.log(failures === 0 ? "\nE2E 垂直切片 + 交互排查 + 模型 BYOK 全部通过 ✅" : `\n${failures} 项失败 ❌`);
 } finally {
   ws.close();
   chrome.kill();

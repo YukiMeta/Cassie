@@ -1,6 +1,19 @@
 import { useState } from "react";
 import { deriveLifecycle } from "@cassie/spec";
-import { importMedia, saveToFile, loadFromFile, selectEntity, toggleEntityLock, useAppState } from "../store";
+import type { SemanticEntity } from "@cassie/spec";
+import type { Project } from "@cassie/editor-core";
+import {
+  addSemanticEntities,
+  importMedia,
+  saveToFile,
+  loadFromFile,
+  selectEntity,
+  setSettingsOpen,
+  setToast,
+  toggleEntityLock,
+  useAppState,
+} from "../store";
+import { visionExtract, type ExtractedCandidate } from "../lib/model-client";
 
 const TAB_LABELS: Record<string, [string, string]> = {
   project: ["Project Context", "剧本与分镜"],
@@ -155,6 +168,7 @@ export function Sidebar() {
 
         {tab === "layers" && (
           <div className="tab-content active">
+            <ExtractFlow />
             <div className="section-label">
               <span>主体与锁</span>
               <span>{entities.length}</span>
@@ -203,5 +217,171 @@ export function Sidebar() {
         )}
       </div>
     </aside>
+  );
+}
+
+/**
+ * 语义提取流程：SAM 3 分析视频 → 候选主体（概念 + 轨迹时间窗）→ 用户确认 → 绑定语义实体。
+ * 未配置视觉服务时引导用户去 ⚙ 模型 设置。
+ */
+function ExtractFlow() {
+  const state = useAppState();
+  const [open, setOpen] = useState(false);
+  const [prompts, setPrompts] = useState("perfume bottle, person, bottle");
+  const [running, setRunning] = useState(false);
+  const [candidates, setCandidates] = useState<ExtractedCandidate[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [names, setNames] = useState<Record<string, string>>({});
+
+  const runExtract = async () => {
+    const videoFile = state.adapter.getProject();
+    const videoTrack = videoFile.tracks.find((t) => t.kind === "video");
+    const clip = videoTrack?.clips[0];
+    const asset = clip?.assetId ? videoFile.assets[clip.assetId] : null;
+    if (!asset?.url) {
+      setError("项目里没有视频素材：请先导入或载入演示项目");
+      return;
+    }
+    const blob = await fetch(asset.url).then((r) => r.blob());
+    const file = new File([blob], asset.name, { type: blob.type });
+    setRunning(true);
+    setError(null);
+    try {
+      const result = await visionExtract(state.modelConfig.vision, {
+        file,
+        prompts: prompts.split(/[,，\n]/).map((s) => s.trim()).filter(Boolean),
+      });
+      setCandidates(result.candidates);
+      const all = new Set<string>();
+      const nameMap: Record<string, string> = {};
+      result.candidates.forEach((c, i) => {
+        const key = `${i}:${c.concept}`;
+        all.add(key);
+        nameMap[key] = c.concept;
+      });
+      setPicked(all);
+      setNames(nameMap);
+      setToast(`SAM 3 提取完成：${result.candidates.length} 个候选主体`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const bindConfirmed = () => {
+    if (!candidates) return;
+    const project = state.adapter.getProject();
+    const videoTrack = project.tracks.find((t) => t.kind === "video");
+    const newEntities: SemanticEntity[] = [];
+    candidates.forEach((c, i) => {
+      const key = `${i}:${c.concept}`;
+      if (!picked.has(key)) return;
+      const track = c.tracks[0];
+      if (!track) return;
+      const name = names[key]?.trim() || c.concept;
+      const entityId = `entity_${Date.now().toString(36)}_${i}`;
+      // 绑定覆盖该轨迹时间窗的视频片段
+      const binds = (videoTrack?.clips ?? [])
+        .filter((clip) => clip.startUs < track.endUs && clip.endUs > track.startUs)
+        .map((clip, idx) => ({
+          targetType: "clip" as const,
+          targetId: clip.id,
+          role: (idx === 0 ? "primary" : "supporting") as "primary" | "supporting",
+        }));
+      newEntities.push({
+        id: entityId,
+        name,
+        kind: "subject",
+        reference: `@${name.replace(/\s+/g, "_")}`,
+        lifecycle: { enterUs: track.startUs, exitUs: track.endUs },
+        attributes: { score: track.score, source: "sam3" },
+        binds,
+        locked: false,
+      });
+    });
+    const bound = addSemanticEntities(newEntities);
+    setCandidates(null);
+    setOpen(false);
+    setToast(bound > 0 ? `已绑定 ${bound} 个语义主体到时间线` : "没有确认任何主体");
+  };
+
+  return (
+    <div className="extract-flow">
+      <button className="extract-toggle" onClick={() => setOpen(!open)}>
+        <span>✦ 从视频提取主体</span>
+        <span className="extract-badge">{state.modelConfig.vision.enabled ? "SAM 3" : "未配置"}</span>
+      </button>
+      {open && (
+        <div className="extract-body">
+          {!state.modelConfig.vision.enabled ? (
+            <div className="extract-hint">
+              <p>需要先配置 SAM 3 视觉提取服务。</p>
+              <button className="secondary-btn" onClick={() => setSettingsOpen(true)}>
+                ⚙ 打开模型设置
+              </button>
+            </div>
+          ) : candidates === null ? (
+            <>
+              <label className="extract-label">
+                <span>概念提示（逗号分隔）</span>
+                <input
+                  value={prompts}
+                  onChange={(e) => setPrompts(e.target.value)}
+                  placeholder="perfume bottle, person, car"
+                />
+              </label>
+              <button className="primary-btn extract-run" disabled={running} onClick={() => void runExtract()}>
+                {running ? "SAM 3 分析中…" : "开始提取"}
+              </button>
+              {error && <div className="extract-error">{error}</div>}
+            </>
+          ) : (
+            <div className="extract-results">
+              <div className="extract-result-head">
+                <strong>候选主体</strong>
+                <span>勾选要绑定的</span>
+              </div>
+              {candidates.length === 0 && <p className="extract-hint">没有检测到匹配的概念</p>}
+              {candidates.map((c, i) => {
+                const key = `${i}:${c.concept}`;
+                const track = c.tracks[0];
+                return (
+                  <label key={key} className="extract-candidate">
+                    <input
+                      type="checkbox"
+                      checked={picked.has(key)}
+                      onChange={(e) => {
+                        const next = new Set(picked);
+                        if (e.target.checked) next.add(key);
+                        else next.delete(key);
+                        setPicked(next);
+                      }}
+                    />
+                    <input
+                      className="extract-name"
+                      value={names[key] ?? c.concept}
+                      onChange={(e) => setNames((n) => ({ ...n, [key]: e.target.value }))}
+                    />
+                    <span className="extract-meta">
+                      {track ? `${(track.startUs / 1e6).toFixed(1)}s—${(track.endUs / 1e6).toFixed(1)}s · ${(track.score * 100).toFixed(0)}%` : "无轨迹"}
+                    </span>
+                  </label>
+                );
+              })}
+              <div className="extract-actions">
+                <button className="ghost-btn" onClick={() => { setCandidates(null); setError(null); }}>
+                  重来
+                </button>
+                <button className="primary-btn" onClick={bindConfirmed}>
+                  确认绑定
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

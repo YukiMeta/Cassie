@@ -6,7 +6,7 @@ import {
   runGuards,
   type EditTransaction,
 } from "./compile";
-import { parseIntent, resolveSubject, type Scope } from "./intent";
+import { parseIntent, resolveSubject, type Intent, type Scope } from "./intent";
 import { canAdvance, FLOW, type HarnessState } from "./states";
 
 /**
@@ -45,9 +45,17 @@ export class Harness {
     intentText: string,
     ctx: { playheadUs?: number; selectedEntityId?: string; scopeOverride?: Scope } = {},
   ): EditTransaction {
-    const project = this.adapter.getProject();
     const intent = parseIntent(intentText, ctx);
     if (ctx.scopeOverride) intent.scope = ctx.scopeOverride;
+    return this.compileFromIntent(intent, ctx);
+  }
+
+  /** 从结构化 Intent 编译（LLM 适配器入口）：契约与 compile 完全一致 */
+  compileFromIntent(
+    intent: Intent,
+    ctx: { playheadUs?: number; selectedEntityId?: string } = {},
+  ): EditTransaction {
+    const project = this.adapter.getProject();
     const tx: EditTransaction = {
       id: `tx_${this.transactions.length + 1}`,
       status: "DRAFT",

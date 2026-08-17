@@ -3,7 +3,7 @@ import { deriveLifecycle } from "@cassie/spec";
 import {
   cancelTransaction,
   commitTransaction,
-  compileIntent,
+  compileIntentSmart,
   rollbackTransaction,
   setToast,
   useAppState,
@@ -39,9 +39,9 @@ export function AgentPanel() {
   const lifecycle = selected ? deriveLifecycle(selected, state.adapter.getProject()) : null;
   const tx = state.transactions[state.transactions.length - 1];
 
-  const plan = () => {
+  const plan = async () => {
     try {
-      compileIntent(input, scope);
+      await compileIntentSmart(input, scope);
       setToast("已生成 Harness 执行计划，请检查影响范围后提交。");
     } catch (error) {
       setToast(`计划生成失败：${error instanceof Error ? error.message : String(error)}`);
@@ -108,7 +108,7 @@ export function AgentPanel() {
         <div className="composer">
           <input value={input} onChange={(event) => setInput(event.target.value)} aria-label="Agent 指令" />
           <div className="reference-chips"><span className="reference-token">{selected?.reference ?? "@Nocturne_Bottle"}</span></div>
-          <div className="composer-row"><span className="composer-hint">每个修改都编译为可撤销语义事务 · 全程本地，零上传</span><button className="primary-btn plan-btn" onClick={plan}>生成执行计划</button></div>
+          <div className="composer-row"><span className="composer-hint">{state.parsing ? "模型解析中…" : state.parseMode === "llm" ? "LLM 解析意图 · 失败自动回退本地" : "本地确定性解析 · 可在 ⚙ 模型 中配置 LLM"}</span><button className="primary-btn plan-btn" onClick={() => void plan()} disabled={state.parsing}>{state.parsing ? "解析中…" : "生成执行计划"}</button></div>
         </div>
 
         {tx && <div className="plan-card visible">
