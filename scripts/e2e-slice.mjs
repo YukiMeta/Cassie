@@ -330,7 +330,46 @@ try {
   );
   await sleep(300);
 
-  console.log(failures === 0 ? "\nE2E 垂直切片 + 交互排查 + 模型 BYOK + 分区布局 全部通过 ✅" : `\n${failures} 项失败 ❌`);
+  // ---------- 关键帧与缩略图 ----------
+
+  // 18. 片段缩略图渲染（具象 demo 素材带缩略图）
+  const hasThumb = await evalJS(`document.querySelectorAll(".timeline-clip.has-thumb").length`);
+  assert(hasThumb >= 2, `片段缩略图渲染（${hasThumb} 个片段带缩略图）`);
+
+  // 19. 关键帧：选中片段 → ◆ 标记 → 出现在片段上 → 再点删除
+  const clipRect = await rectOf(".timeline-clip[data-clip-id]");
+  await mouse("mousePressed", clipRect.x + clipRect.w / 2, clipRect.y + clipRect.h / 2, { buttons: 1 });
+  await mouse("mouseReleased", clipRect.x + clipRect.w / 2, clipRect.y + clipRect.h / 2);
+  await sleep(300);
+  const kfBtn = () => evalJS(`(() => { const b = [...document.querySelectorAll(".timeline-tools .secondary-btn")].find(x => x.textContent.includes("关键帧")); return b ? b.className : ""; })()`);
+  const kfCount = () => evalJS(`document.querySelectorAll(".keyframe-marker").length`);
+  const selectedBefore = await evalJS(`!!document.querySelector(".timeline-clip.selected")`);
+  assert(selectedBefore, "点击片段选中");
+  await evalJS(`[...document.querySelectorAll(".timeline-tools .secondary-btn")].find(b => b.textContent.includes("关键帧")).click()`);
+  await sleep(300);
+  assert((await kfCount()) === 1, "◆ 关键帧标记出现在片段上");
+  const kfActive = await kfBtn();
+  assert(kfActive?.includes("active"), "关键帧按钮高亮（播放头处已有关键帧）");
+  // 点击关键帧跳转：播放头应落到 片段入点 + 关键帧相对时间
+  const kfAbs = await evalJS(`(() => {
+    const s = window.__cassie.getState();
+    const p = s.adapter.getProject();
+    for (const t of p.tracks) for (const c of t.clips) {
+      const k = c.attrs.keyframes;
+      if (Array.isArray(k) && k.length) return (c.startUs + k[0].tUs) / 1e6;
+    }
+    return -1;
+  })()`);
+  await evalJS(`document.querySelector(".keyframe-marker").click()`);
+  await sleep(200);
+  const playheadAfterKf = await evalJS(`window.__cassie.getState().playheadUs / 1e6`);
+  assert(Math.abs(playheadAfterKf - kfAbs) < 0.01, `点击关键帧跳转播放头（${playheadAfterKf.toFixed(1)}s → 关键帧 ${kfAbs.toFixed(1)}s）`);
+  // 再点一次删除
+  await evalJS(`[...document.querySelectorAll(".timeline-tools .secondary-btn")].find(b => b.textContent.includes("关键帧")).click()`);
+  await sleep(300);
+  assert((await kfCount()) === 0, "再点一次删除关键帧");
+
+  console.log(failures === 0 ? "\nE2E 垂直切片 + 交互 + BYOK + 分区布局 + 关键帧 全部通过 ✅" : `\n${failures} 项失败 ❌`);
 } finally {
   ws.close();
   chrome.kill();

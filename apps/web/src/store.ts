@@ -380,11 +380,13 @@ async function bootDemoInner(): Promise<void> {
   const { adapter } = state;
   // 演示素材时长已知（由 scripts/gen-demo-media.sh 生成），
   // 不依赖 media metadata 事件：加载即时完成，headless 环境同样可用。
+  // v= 版本号：素材重制后强制浏览器放弃旧缓存。
+  const V = "v=20260817";
   const assets: MediaAsset[] = [
-    { id: "demo_night", kind: "video", name: "night.mp4", durationUs: 15_000_000, url: "/demo/night.mp4" },
-    { id: "demo_mia", kind: "video", name: "mia.mp4", durationUs: 12_000_000, url: "/demo/mia.mp4" },
-    { id: "demo_bottle", kind: "video", name: "bottle.mp4", durationUs: 15_000_000, url: "/demo/bottle.mp4" },
-    { id: "demo_music", kind: "audio", name: "music.mp3", durationUs: 15_000_000, url: "/demo/music.mp3" },
+    { id: "demo_night", kind: "video", name: "night.mp4", durationUs: 15_000_000, url: `/demo/night.mp4?${V}`, meta: { thumb: `/demo/thumbs/night.jpg?${V}` } },
+    { id: "demo_mia", kind: "video", name: "mia.mp4", durationUs: 12_000_000, url: `/demo/mia.mp4?${V}`, meta: { thumb: `/demo/thumbs/mia.jpg?${V}` } },
+    { id: "demo_bottle", kind: "video", name: "bottle.mp4", durationUs: 15_000_000, url: `/demo/bottle.mp4?${V}`, meta: { thumb: `/demo/thumbs/bottle.jpg?${V}` } },
+    { id: "demo_music", kind: "audio", name: "music.mp3", durationUs: 15_000_000, url: `/demo/music.mp3?${V}` },
   ];
   const night = assets[0]!;
   const mia = assets[1]!;
@@ -586,6 +588,51 @@ export function setSelectedRange(startUs?: TimeUs, endUs?: TimeUs): void {
 export function setClipAttrs(clipId: ClipId, attrs: Record<string, unknown>): void {
   state.adapter.applyCommands([setClipAttrsCmd(clipId, attrs)]);
   autosave();
+}
+
+export interface Keyframe {
+  /** 相对 clip 入点的时间（µs） */
+  tUs: TimeUs;
+}
+
+/** 在播放头处给所选片段 加/删 关键帧（0.5s 吸附，可撤销） */
+export function toggleKeyframe(clipId: ClipId): void {
+  const project = state.adapter.getProject();
+  let clip: { startUs: TimeUs; endUs: TimeUs; attrs: Record<string, unknown> } | null = null;
+  for (const track of project.tracks) {
+    const c = track.clips.find((x) => x.id === clipId);
+    if (c) clip = c;
+  }
+  if (!clip) return;
+  const rel = Math.max(0, Math.min(clip.endUs - clip.startUs - 1, state.playheadUs - clip.startUs));
+  const snapped = Math.round(rel / 500_000) * 500_000;
+  const kfs: Keyframe[] = Array.isArray(clip.attrs.keyframes)
+    ? (clip.attrs.keyframes as Keyframe[])
+    : [];
+  const idx = kfs.findIndex((k) => Math.abs(k.tUs - snapped) <= 250_000);
+  if (idx >= 0) {
+    kfs.splice(idx, 1);
+    setToast("已删除关键帧");
+  } else {
+    kfs.push({ tUs: snapped });
+    kfs.sort((a, b) => a.tUs - b.tUs);
+    setToast(`已标记关键帧 @${(snapped / 1e6).toFixed(1)}s`);
+  }
+  state.adapter.applyCommands([setClipAttrsCmd(clipId, { keyframes: kfs })]);
+  autosave();
+}
+
+export function hasKeyframeAtPlayhead(clipId: ClipId): boolean {
+  const project = state.adapter.getProject();
+  for (const track of project.tracks) {
+    const c = track.clips.find((x) => x.id === clipId);
+    if (!c) continue;
+    if (!Array.isArray(c.attrs.keyframes)) return false;
+    const rel = state.playheadUs - c.startUs;
+    const snapped = Math.round(rel / 500_000) * 500_000;
+    return (c.attrs.keyframes as Keyframe[]).some((k) => Math.abs(k.tUs - snapped) <= 250_000);
+  }
+  return false;
 }
 
 // ---------- 导入 / 持久化 ----------

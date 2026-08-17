@@ -40,6 +40,8 @@ export interface MediaAsset {
   height?: number;
   /** 运行时 blob 引用（objectURL）；持久化时只保留 id，由资产库恢复 */
   url?: string;
+  /** 自由扩展元数据（缩略图路径、来源标记等） */
+  meta?: Record<string, unknown>;
 }
 
 export interface Track {

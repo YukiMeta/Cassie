@@ -45,5 +45,11 @@ ffmpeg -y -f lavfi -i "sine=frequency=110:duration=15" \
   -filter_complex "[0:a]volume=0.32[a0];[1:a]volume=0.2,tremolo=f=0.4:d=0.6[a1];[a0][a1]amix=inputs=2,afade=t=in:d=1.2,afade=t=out:st=13.5:d=1.5" \
   -c:a libmp3lame -q:a 4 "$OUT/music.mp3" -loglevel error
 
+# 5. 片段缩略图（时间线质感）
+mkdir -p "$OUT/thumbs"
+for f in night mia bottle; do
+  ffmpeg -y -ss 6 -i "$OUT/$f.mp4" -frames:v 1 -vf scale=180:-1 -q:v 4 "$OUT/thumbs/$f.jpg" -loglevel error
+done
+
 echo "✓ demo media → $OUT"
-ls -la "$OUT"/*.mp4 "$OUT"/*.mp3
+ls -la "$OUT"/*.mp4 "$OUT"/*.mp3 "$OUT/thumbs/"

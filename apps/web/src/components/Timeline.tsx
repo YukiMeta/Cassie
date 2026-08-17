@@ -4,11 +4,14 @@ import type { Clip, Project, TimeUs } from "@cassie/editor-core";
 import { deriveLifecycle } from "@cassie/spec";
 import {
   autosave,
+  hasKeyframeAtPlayhead,
   selectClip,
   setPlayhead,
+  toggleKeyframe,
   togglePlay,
   toggleSnap,
   useAppState,
+  type Keyframe,
 } from "../store";
 import { PanelGrip } from "./PanelGrip";
 
@@ -158,6 +161,14 @@ export function Timeline() {
           >
             ⌁ 吸附 0.5s
           </button>
+          <button
+            className={`secondary-btn ${state.selectedClipId && hasKeyframeAtPlayhead(state.selectedClipId) ? "active" : ""}`}
+            title="在播放头处给所选片段标记/删除关键帧"
+            disabled={!state.selectedClipId}
+            onClick={() => state.selectedClipId && toggleKeyframe(state.selectedClipId)}
+          >
+            ◆ 关键帧
+          </button>
           <button className="secondary-btn" title="缩小时间线" onClick={() => setZoom((z) => Math.max(1, z - 1))}>
             −
           </button>
@@ -205,11 +216,18 @@ export function Timeline() {
               {track.clips.map((clip) => {
                 const entity = entityOfClip(clip.id);
                 const selected = state.selectedClipId === clip.id;
+                const thumb = clip.assetId ? project.assets[clip.assetId]?.meta?.thumb : null;
+                const keyframes = (Array.isArray(clip.attrs.keyframes) ? (clip.attrs.keyframes as Keyframe[]) : []) as Keyframe[];
+                const span = clip.endUs - clip.startUs;
                 return (
                   <div
                     key={clip.id}
-                    className={`timeline-clip dragable ${selected ? "selected" : ""} ${track.kind === "audio" ? "audio" : ""}`}
-                    style={{ left: pct(clip.startUs), width: pct(clip.endUs - clip.startUs) }}
+                    className={`timeline-clip dragable ${selected ? "selected" : ""} ${track.kind === "audio" ? "audio" : ""} ${thumb ? "has-thumb" : ""}`}
+                    style={{
+                      left: pct(clip.startUs),
+                      width: pct(clip.endUs - clip.startUs),
+                      ...(thumb ? { backgroundImage: `linear-gradient(rgba(10,12,22,.55), rgba(10,12,22,.55)), url(${thumb})` } : {}),
+                    }}
                     data-clip-id={clip.id}
                     onPointerDown={(e) => onClipPointerDown(e, clip, track.id)}
                     title={`${formatTimecode(clip.startUs)}—${formatTimecode(clip.endUs)}${entity ? ` · ${entity.name}` : ""}`}
@@ -218,6 +236,21 @@ export function Timeline() {
                     <span className="clip-name">
                       {entity?.name ?? project.assets[clip.assetId ?? ""]?.name ?? (clip.attrs.text ? String(clip.attrs.text) : "片段")}
                     </span>
+                    {keyframes.map((k, i) => (
+                      <button
+                        key={i}
+                        className="keyframe-marker"
+                        style={{ left: `${(k.tUs / span) * 100}%` }}
+                        title={`关键帧 @${(k.tUs / 1e6).toFixed(1)}s（点击跳转）`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPlayhead(clip.startUs + k.tUs);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                      >
+                        ◆
+                      </button>
+                    ))}
                     <span className="edge-handle in" data-edge="start" />
                     <span className="edge-handle out" data-edge="end" />
                     <span className="exit-label">{(clip.endUs / 1e6).toFixed(1)}s</span>
