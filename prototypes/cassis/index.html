@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cassie — Semantic Video Editor</title>
+  <meta name="description" content="Cassie：以语义主体、生命周期与状态机驱动的可控视频编辑器" />
+  <link rel="stylesheet" href="/cassis/cassie.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">C</div>
+      <div class="brand-copy"><strong>Cassie</strong><span>Semantic Video Editor</span></div>
+    </div>
+    <div class="project-meta">
+      <span class="project-title">Projects / NOCTURNE / Director Cut</span>
+      <span>·</span><span>15s / 9:16</span>
+      <span class="autosave">● 已保存</span>
+    </div>
+    <nav class="mode-switch" aria-label="工作模式">
+      <button>故事板</button><button class="active">导演画布</button><button>成片</button>
+    </nav>
+    <div class="top-actions">
+      <button class="ghost-btn">版本 03</button>
+      <button class="primary-btn">导出成片</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <aside class="sidebar panel">
+      <div class="panel-tabs">
+        <button class="active" data-tab="project">项目</button>
+        <button data-tab="assets">资产</button>
+        <button data-tab="layers">图层</button>
+      </div>
+      <div class="sidebar-head">
+        <div><span class="eyebrow" id="sidebarEyebrow">Project Context</span><strong id="sidebarTitle">剧本与分镜</strong></div>
+        <button class="icon-btn" id="addAssetBtn" aria-label="添加资产">＋</button>
+      </div>
+      <div class="asset-scroll">
+        <div class="tab-content active" data-panel="project">
+          <div class="section-label"><span>创作基线</span><span>已完成</span></div>
+          <div class="project-card">
+            <div class="project-card-head"><strong>剧本 · NOCTURNE 15s</strong><span>LOCKED</span></div>
+            <p class="script-line">巴黎夜色中，Mia 停下脚步，拿出香水。镜头推近，商品在玻璃音效处切入 Hero Packshot。</p>
+          </div>
+          <div class="project-card">
+            <div class="project-card-head"><strong>分镜板</strong><span>3 SHOTS</span></div>
+            <div class="storyboard-strip">
+              <div class="story-card"><div class="story-thumb" data-shot="01"></div><small>进入夜景 · 4s</small></div>
+              <div class="story-card"><div class="story-thumb s2" data-shot="02"></div><small>展示商品 · 6s</small></div>
+              <div class="story-card"><div class="story-thumb s3" data-shot="03"></div><small>Hero · 5s</small></div>
+            </div>
+          </div>
+          <div class="project-card">
+            <div class="project-card-head"><strong>导演约束</strong><span>4 RULES</span></div>
+            <p class="script-line">人物身份不变 · 商品 Logo 可读 · 暖侧光持续 · 10.5s 玻璃音效不可移动</p>
+          </div>
+        </div>
+
+        <div class="tab-content" data-panel="assets">
+          <div class="upload-zone" id="uploadAssetZone">＋ 上传长期资产或补充参考</div>
+          <div class="section-label"><span>长期资产库</span><span>使用 @ 引用</span></div>
+          <div class="library-card asset-ref" data-reference="@Mia">
+            <div class="ref-mosaic"><i></i><i></i><i></i><i></i></div>
+            <div><strong><em>@Mia</em> · 人物 A</strong><p>身份资产 · 跨项目可用</p><div class="asset-capabilities"><span>三视图 ×3</span><span class="bound">声音已绑定</span><span>身份 DNA</span></div></div>
+          </div>
+          <div class="library-card asset-ref" data-reference="@Nocturne_Bottle">
+            <div class="ref-mosaic"><i></i><i></i><i></i><i></i></div>
+            <div><strong><em>@Nocturne_Bottle</em></strong><p>商品主资产 · 包装版本 2</p><div class="asset-capabilities"><span>三视图 ×4</span><span class="bound">Logo 纹理</span><span>材质参考</span></div></div>
+          </div>
+          <div class="library-card asset-ref" data-reference="@Paris_Night">
+            <div class="ref-mosaic"><i></i><i></i><i></i><i></i></div>
+            <div><strong><em>@Paris_Night</em></strong><p>场景资产 · 暖侧光</p><div class="asset-capabilities"><span>环境图 ×6</span><span>光照参考</span><span>空间布局</span></div></div>
+          </div>
+          <div class="section-label"><span>本项目引用</span><span>3</span></div>
+          <div class="context-card"><span class="reference-token">@Mia</span><span class="reference-token">@Nocturne_Bottle</span><span class="reference-token">@Paris_Night</span></div>
+        </div>
+
+        <div class="tab-content" data-panel="layers">
+          <div class="section-label"><span>主体与锁</span><span>3</span></div>
+          <article class="asset-card" data-select="character"><div class="asset-thumb character"></div><div class="asset-copy"><strong>人物 A · Mia</strong><span>00.0s—10.0s · @Mia</span></div><button class="lock-btn locked" data-lock="人物身份" title="锁定人物">▣</button></article>
+          <article class="asset-card selected" data-select="product"><div class="asset-thumb product"></div><div class="asset-copy"><strong>香水瓶 B</strong><span>04.0s—15.0s · @Nocturne_Bottle</span></div><button class="lock-btn locked" data-lock="商品与Logo" title="锁定商品">▣</button></article>
+          <article class="asset-card" data-select="scene"><div class="asset-thumb scene"></div><div class="asset-copy"><strong>巴黎夜景</strong><span>00.0s—15.0s · @Paris_Night</span></div><button class="lock-btn" data-lock="背景场景" title="锁定场景">□</button></article>
+          <div class="section-label"><span>语义图层</span><span>可寻址</span></div>
+          <div class="layer-row" data-select="character"><span class="layer-dot"></span><span>人物 A</span><small>V1</small></div>
+          <div class="layer-row selected" data-select="product"><span class="layer-dot mint"></span><span>香水瓶 B</span><small>V2</small></div>
+          <div class="layer-row" data-select="logo"><span class="layer-dot blue"></span><span>品牌文案</span><small>G1</small></div>
+          <div class="section-label"><span>全局锁</span><span>2</span></div>
+          <div class="context-card"><span class="lock-chip">▣ 人物身份</span><span class="lock-chip">▣ 商品与Logo</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="stage-panel">
+      <div class="stage-toolbar">
+        <div class="tool-group">
+          <button class="tool-btn active" id="selectTool">↖ 选择</button>
+          <button class="tool-btn" id="annotateTool">▱ 标注</button>
+          <button class="tool-btn" id="motionTool">↝ 动作</button>
+          <button class="tool-btn">T 文字</button>
+        </div>
+        <div class="tool-group"><span class="zoom">适应画布 · 72%</span><button class="tool-btn">⌗ 安全框</button><button class="tool-btn">⋯</button></div>
+      </div>
+      <div class="stage-workspace">
+        <div class="video-wrap">
+          <div class="selection-toolbar visible" id="selectionToolbar">
+            <button data-action="annotate">标注</button><button data-action="lock">锁定</button><button data-action="replace">替换</button><button data-action="remove">移除</button>
+          </div>
+          <div class="video-frame" id="videoFrame" aria-label="视频空间画布">
+            <div class="sky-glow"></div>
+            <div class="building one"><div class="window-grid"></div></div>
+            <div class="building two"><div class="window-grid"></div></div>
+            <div class="street"></div><div class="lamp"></div>
+            <div class="canvas-object character-object" data-object="character" data-label="人物 A · Mia">
+              <div class="person-hair"></div><div class="person-head"></div><div class="person-body"></div><div class="person-arm"></div>
+            </div>
+            <div class="canvas-object product-object selected" data-object="product" data-label="香水瓶 B">
+              <div class="bottle-cap"></div><div class="bottle-body"><div class="bottle-label">NOCTURNE</div></div>
+            </div>
+            <div class="canvas-object logo-layer" data-object="logo" data-label="品牌文案">NOCTURNE</div>
+            <div class="safe-frame"></div>
+            <div class="annotation-box" id="annotationBox"></div>
+            <div class="frame-info"><span id="shotLabel">镜头 02 · 展示商品</span><span id="frameTime">00:08.0</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="agent-panel panel">
+      <div class="agent-head">
+        <div><span class="eyebrow">Subject Harness</span><strong>语义修改编译器</strong></div>
+        <span class="agent-status" id="agentStatus">等待指令</span>
+      </div>
+      <div class="agent-body">
+        <div class="context-card">
+          <div class="context-title"><strong>当前上下文</strong><span id="contextBadge">已绑定实体</span></div>
+          <dl class="context-grid">
+            <dt>Annotation</dt><dd id="selectedTarget">香水瓶 B</dd>
+            <dt>请求范围</dt><dd id="selectedRange">04.0s — 15.0s</dd>
+            <dt>主体生命期</dt><dd id="lifecycleText">04.0s — 15.0s</dd>
+            <dt>状态</dt><dd id="selectedState">held_by_character_A</dd>
+            <dt>传播</dt><dd id="selectedScope">主体生命周期</dd>
+            <dt>硬锁</dt><dd id="lockList"><span class="lock-chip">人物身份</span><span class="lock-chip">商品与Logo</span></dd>
+          </dl>
+          <div class="scope-row" aria-label="修改范围">
+            <button class="scope-chip">此刻</button><button class="scope-chip">本镜头</button><button class="scope-chip active">主体生命周期</button><button class="scope-chip">从这里开始</button><button class="scope-chip">全片</button>
+          </div>
+        </div>
+
+        <div class="harness-card" id="harnessCard">
+          <div class="context-title"><strong>主体 Harness 状态机</strong><span id="harnessState">BOUND</span></div>
+          <div class="harness-flow" id="harnessFlow">
+            <div class="harness-node done" data-state="BOUND"><b>01 · BOUND</b>绑定语义主体</div>
+            <div class="harness-node active" data-state="TRACED"><b>02 · TRACE</b>追踪出现与消失</div>
+            <div class="harness-node" data-state="IMPACTED"><b>03 · IMPACT</b>计算时间线传播</div>
+            <div class="harness-node" data-state="GUARDED"><b>04 · GUARD</b>检查关系与硬锁</div>
+            <div class="harness-node" data-state="COMPILED"><b>05 · COMPILE</b>生成级联 Patch</div>
+            <div class="harness-node" data-state="COMMITTED"><b>06 · COMMIT</b>验证并提交版本</div>
+          </div>
+          <div class="lifecycle">
+            <div class="lifecycle-track"><span class="lifecycle-span" id="lifecycleSpan" style="left:26.67%;width:73.33%"></span></div>
+            <span class="lifecycle-readout" id="lifecycleReadout">出现 04.0 → 消失 15.0</span>
+          </div>
+          <div class="impact-list" id="impactList">
+            <div class="impact-row"><b>主状态</b><span>香水瓶 B · 04.0s—15.0s</span><i class="impact-tag change">CHANGE</i></div>
+            <div class="impact-row"><b>关系</b><span>人物 A 手持 · 04.0s—10.0s</span><i class="impact-tag guard">RECHECK</i></div>
+            <div class="impact-row"><b>构图</b><span>镜头 03 商品特写</span><i class="impact-tag guard">REFLOW</i></div>
+            <div class="impact-row"><b>保护</b><span>Logo、人物身份、音乐</span><i class="impact-tag guard">LOCK</i></div>
+          </div>
+        </div>
+
+        <div class="quick-prompts">
+          <button data-prompt="让香水瓶从第8秒开始变成蓝色，Logo和人物保持不变">瓶身变蓝</button>
+          <button data-prompt="把香水瓶替换成磨砂银瓶，从第一次出现到消失都保持同一个商品">全生命期替换</button>
+          <button data-prompt="把商品第一次出现提前2秒，音乐节奏保持不变">提前露出</button>
+          <button data-prompt="只把这一段改成商品特写，其他镜头都不要动">改为特写</button>
+        </div>
+        <div class="composer">
+          <input id="commandInput" aria-label="Agent指令" value="把香水瓶替换成磨砂银瓶，从第一次出现到消失都保持同一个商品" />
+          <div class="reference-chips" id="activeReferences"><span class="reference-token">@Nocturne_Bottle</span><span class="reference-token">@Mia</span></div>
+          <div class="composer-row">
+            <div class="composer-tools">
+              <button class="mic-btn" id="micBtn" title="语音输入（演示）">◉</button>
+              <button class="reference-btn" id="referenceBtn" title="引用长期资产">@ 引用</button>
+              <div class="reference-menu" id="referenceMenu">
+                <button class="reference-option" data-reference="@Mia"><b>@Mia</b><span>人物三视图 · 声音绑定 · 身份 DNA</span></button>
+                <button class="reference-option" data-reference="@Nocturne_Bottle"><b>@Nocturne_Bottle</b><span>商品三视图 · Logo · 材质参考</span></button>
+                <button class="reference-option" data-reference="@Paris_Night"><b>@Paris_Night</b><span>场景布局 · 环境光 · 色彩参考</span></button>
+              </div>
+            </div>
+            <button class="primary-btn plan-btn" id="planBtn">生成执行计划</button>
+          </div>
+        </div>
+
+        <div class="plan-card" id="planCard">
+          <div class="context-title"><strong>Agent执行计划</strong><span>待确认</span></div>
+          <div class="plan-step"><span class="step-index">1</span><div><strong>定位主体生命周期</strong><span id="planTarget">香水瓶 B · 04.0s出现 → 15.0s消失</span></div></div>
+          <div class="plan-step"><span class="step-index">2</span><div><strong>计算级联影响</strong><span id="planImpact">商品状态轨、手持关系、镜头03构图</span></div></div>
+          <div class="plan-step"><span class="step-index">3</span><div><strong>约束求解</strong><span id="planLocks">保持Logo、人物身份、背景与音频</span></div></div>
+          <div class="plan-step"><span class="step-index">4</span><div><strong>编译 Video Spec Patch</strong><span>一个主体事务 · 三个依赖 Patch · 可回滚</span></div></div>
+          <div class="patch-preview" id="patchPreview"><span class="minus">- product_B.appearance.color: violet</span>
+<span class="plus">+ product_B.appearance.color: blue</span>
+  lifetime: 08.0s → 15.0s
+  propagate: held_by(character_A), hero_packshot
+  preserve: logo, character.identity, audio</div>
+          <div class="impact-bar"><span></span></div>
+          <div class="estimate"><span id="impactEstimate">影响：2个镜头 · 3条状态轨</span><span>≈ 26积分 · 58秒</span></div>
+          <button class="primary-btn execute-btn" id="executeBtn">确认级联 Patch 并执行</button>
+        </div>
+        <div class="agent-message" id="agentMessage">
+          <div class="log" data-log="0">追踪主体从出现到消失的完整状态</div>
+          <div class="log" data-log="1">重算关联镜头、关系与构图依赖</div>
+          <div class="log" data-log="2">检查硬锁并编译原子级 Patch</div>
+          <div class="log" data-log="3">局部生成、连续性验证并提交版本</div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="timeline panel">
+      <div class="timeline-head">
+        <div class="transport"><button class="play-btn" id="playBtn" aria-label="播放">▶</button><span class="timecode" id="timecode">00:08.0 / 00:15.0</span><span class="selection-readout">已选择：04.0s—15.0s · 香水瓶 B</span></div>
+        <div class="timeline-tools"><button class="secondary-btn" id="aiMotionBtn">✦ 大幅轨迹交给 AI</button><button class="secondary-btn">⌁ 吸附 0.5s</button><button class="secondary-btn">−　＋</button></div>
+      </div>
+      <div class="timeline-body">
+        <div class="ruler-row">
+          <div class="track-label">时间</div>
+          <div class="track-canvas" id="rulerCanvas">
+            <span class="tick" style="left:0%">0s</span><span class="tick" style="left:20%">3s</span><span class="tick" style="left:40%">6s</span><span class="tick" style="left:60%">9s</span><span class="tick" style="left:80%">12s</span><span class="tick" style="left:99%">15s</span>
+            <div class="selection-range"></div><div class="playhead"></div><div class="timeline-overlay"></div>
+          </div>
+        </div>
+        <div class="track-row" data-track="shots">
+          <div class="track-label"><b>V</b> 镜头</div>
+          <div class="track-canvas"><div class="segment shot1" data-range="0,4">01 进入夜景</div><div class="segment shot2" data-range="4,10">02 展示商品</div><div class="segment shot3" data-range="10,15">03 Hero Packshot</div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row" data-track="character">
+          <div class="track-label"><b>◎</b> 人物 A ▣ <span class="track-hint">进 / 出</span></div>
+          <div class="track-canvas">
+            <div class="semantic-clip" data-entity="character" data-start="0" data-end="10" style="left:0%;width:66.67%"><span class="entry-label">进场 0.0s</span><span class="exit-label">出场 10.0s</span><span class="edge-handle in" data-edge="start"></span><span class="clip-name">行走 → 停下展示</span><svg class="motion-path" viewBox="0 0 100 24" preserveAspectRatio="none"><path d="M2,18 C24,17 38,7 56,9 S78,14 98,7"/><circle cx="2" cy="18" r="1.6"/><circle cx="98" cy="7" r="1.6"/></svg><span class="edge-handle out" data-edge="end"></span></div>
+            <div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div>
+          </div>
+        </div>
+        <div class="track-row" data-track="product">
+          <div class="track-label"><b>◇</b> 香水瓶 B ▣ <span class="track-hint">进 / 出</span></div>
+          <div class="track-canvas">
+            <div class="semantic-clip" data-entity="product" data-start="4" data-end="15" style="left:26.67%;width:73.33%"><span class="entry-label">进场 4.0s</span><span class="exit-label">出场 15.0s</span><span class="edge-handle in" data-edge="start"></span><span class="clip-name">人物手中 → Hero Packshot</span><svg class="motion-path" viewBox="0 0 100 24" preserveAspectRatio="none"><path d="M2,17 C22,18 42,15 58,10 S80,4 98,5"/><circle cx="2" cy="17" r="1.6"/><circle cx="98" cy="5" r="1.6"/></svg><span class="edge-handle out" data-edge="end"></span></div>
+            <div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div>
+          </div>
+        </div>
+        <div class="track-row" data-track="logo">
+          <div class="track-label"><b>T</b> 品牌文案 ▣ <span class="track-hint">进 / 出</span></div>
+          <div class="track-canvas"><div class="semantic-clip" data-entity="logo" data-start="12" data-end="15" style="left:80%;width:20%"><span class="entry-label">进场 12.0s</span><span class="exit-label">出场 15.0s</span><span class="edge-handle in" data-edge="start"></span><span class="clip-name">NOCTURNE 淡入</span><svg class="motion-path" viewBox="0 0 100 24" preserveAspectRatio="none"><path d="M2,17 C35,16 62,8 98,8"/><circle cx="2" cy="17" r="1.6"/><circle cx="98" cy="8" r="1.6"/></svg><span class="edge-handle out" data-edge="end"></span></div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row" data-track="camera">
+          <div class="track-label"><b>⌁</b> 摄影机</div>
+          <div class="track-canvas"><div class="segment camera state-a" data-range="0,4">中景后退</div><div class="segment camera state-b" data-range="4,10">缓慢推近</div><div class="segment camera state-c" data-range="10,15">固定特写</div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row" data-track="audio">
+          <div class="track-label"><b>♪</b> 音乐 ▣</div>
+          <div class="track-canvas"><div class="segment audio" data-range="0,15">NOCTURNE · 神秘电子乐　⌁ 第10秒玻璃音效</div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+      </div>
+      <div class="transcript">
+        <div class="transcript-label">语义定位</div>
+        <button class="transcript-chip" data-time="1"><b>01.0</b>人物进入巴黎夜景</button>
+        <button class="transcript-chip" data-time="5"><b>05.0</b>拿出香水</button>
+        <button class="transcript-chip active" data-time="8"><b>08.0</b>商品第一次清晰露出</button>
+        <button class="transcript-chip" data-time="10.5"><b>10.5</b>音乐卡点 · 产品特写</button>
+        <button class="transcript-chip" data-time="13"><b>13.0</b>品牌文案出现</button>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast">局部修改已完成，Video Spec 已更新。</div>
+
+  <script src="/cassis/cassie.js"></script>
+</body>
+</html>

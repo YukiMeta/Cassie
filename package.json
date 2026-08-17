@@ -1,0 +1,19 @@
+{
+  "name": "cassie",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @cassie/web",
+    "build": "npm run build -w @cassie/web",
+    "test": "vitest run -w tests",
+    "test:watch": "vitest -w tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

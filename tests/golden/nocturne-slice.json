@@ -1,0 +1,228 @@
+{
+  "projectJson": {
+    "schema": "cassie/project",
+    "version": 1,
+    "savedAt": "2026-08-17T13:27:43.667Z",
+    "project": {
+      "id": "$1",
+      "name": "NOCTURNE · Director Cut",
+      "revision": 3,
+      "settings": {
+        "fps": 30,
+        "width": 1080,
+        "height": 1920,
+        "durationUs": 15000000
+      },
+      "tracks": [
+        {
+          "id": "$2",
+          "kind": "video",
+          "name": "画面",
+          "locked": false,
+          "clips": [
+            {
+              "id": "$3",
+              "assetId": "$4",
+              "startUs": 0,
+              "endUs": 15000000,
+              "sourceInUs": 0,
+              "attrs": {}
+            },
+            {
+              "id": "$5",
+              "assetId": "$6",
+              "startUs": 0,
+              "endUs": 10000000,
+              "sourceInUs": 0,
+              "attrs": {
+                "appearance": {
+                  "identity": "locked"
+                }
+              }
+            },
+            {
+              "id": "$7",
+              "assetId": "$8",
+              "startUs": 2000000,
+              "endUs": 13000000,
+              "sourceInUs": 0,
+              "attrs": {
+                "appearance": {
+                  "variant": "glass_violet"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "$9",
+          "kind": "text",
+          "name": "文字",
+          "locked": false,
+          "clips": [
+            {
+              "id": "$10",
+              "assetId": null,
+              "startUs": 12000000,
+              "endUs": 15000000,
+              "sourceInUs": 0,
+              "attrs": {
+                "text": "NOCTURNE",
+                "color": "white"
+              }
+            }
+          ]
+        },
+        {
+          "id": "$11",
+          "kind": "audio",
+          "name": "音乐",
+          "locked": false,
+          "clips": [
+            {
+              "id": "$12",
+              "assetId": "$13",
+              "startUs": 0,
+              "endUs": 15000000,
+              "sourceInUs": 0,
+              "attrs": {}
+            }
+          ]
+        }
+      ],
+      "assets": {
+        "asset_night": {
+          "id": "$4",
+          "kind": "video",
+          "name": "night.mp4",
+          "durationUs": 15000000,
+          "width": 1080,
+          "height": 1920
+        },
+        "asset_mia": {
+          "id": "$6",
+          "kind": "video",
+          "name": "mia.mp4",
+          "durationUs": 12000000,
+          "width": 1080,
+          "height": 1920
+        },
+        "asset_bottle": {
+          "id": "$8",
+          "kind": "video",
+          "name": "bottle.mp4",
+          "durationUs": 15000000,
+          "width": 1080,
+          "height": 1920
+        },
+        "asset_silver": {
+          "id": "$14",
+          "kind": "video",
+          "name": "silver.mp4",
+          "durationUs": 15000000,
+          "width": 1080,
+          "height": 1920
+        },
+        "asset_music": {
+          "id": "$13",
+          "kind": "audio",
+          "name": "nocturne.mp3",
+          "durationUs": 15000000
+        }
+      }
+    }
+  },
+  "txLog": [
+    {
+      "id": "tx_1",
+      "status": "COMMITTED",
+      "intent": {
+        "text": "把香水瓶替换成磨砂银瓶，从第一次出现到消失都保持同一个商品",
+        "operation": "replace_variant",
+        "subjectRef": null,
+        "args": {
+          "variant": "matte_silver"
+        },
+        "scope": "entity_lifecycle"
+      },
+      "subjectId": "product",
+      "lifecycleBefore": {
+        "enterUs": 4000000,
+        "exitUs": 15000000
+      },
+      "lifecycleAfter": {
+        "enterUs": 4000000,
+        "exitUs": 15000000
+      },
+      "commands": [
+        {
+          "kind": "setClipAttrs",
+          "clipId": "$7",
+          "attrs": {
+            "appearance": {
+              "variant": "matte_silver"
+            }
+          }
+        }
+      ],
+      "guards": [
+        {
+          "constraintId": "c_logo",
+          "kind": "warning",
+          "message": "保护「logo」—— 需在事务中显式保留"
+        },
+        {
+          "constraintId": "c_identity",
+          "kind": "warning",
+          "message": "保护「人物 A · Mia」—— 需在事务中显式保留"
+        }
+      ]
+    },
+    {
+      "undo": true,
+      "revision": 2
+    },
+    {
+      "id": "tx_2",
+      "status": "COMMITTED",
+      "intent": {
+        "text": "把商品第一次出现提前2秒，音乐节奏保持不变",
+        "operation": "retime_lifecycle",
+        "subjectRef": null,
+        "args": {
+          "shiftUs": -2000000
+        },
+        "scope": "entity_lifecycle"
+      },
+      "subjectId": "product",
+      "lifecycleBefore": {
+        "enterUs": 4000000,
+        "exitUs": 15000000
+      },
+      "lifecycleAfter": {
+        "enterUs": 2000000,
+        "exitUs": 13000000
+      },
+      "commands": [
+        {
+          "kind": "setClipRange",
+          "clipId": "$7",
+          "startUs": 2000000,
+          "endUs": 13000000
+        }
+      ],
+      "guards": [
+        {
+          "constraintId": "c_logo",
+          "kind": "warning",
+          "message": "保护「logo」—— 需在事务中显式保留"
+        },
+        {
+          "constraintId": "c_identity",
+          "kind": "warning",
+          "message": "保护「人物 A · Mia」—— 需在事务中显式保留"
+        }
+      ]
+    }
+  ]
+}

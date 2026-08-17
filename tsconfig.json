@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@cassie/editor-core": ["packages/editor-core/src/index.ts"],
+      "@cassie/spec": ["packages/spec/src/index.ts"],
+      "@cassie/harness": ["packages/harness/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src", "apps/web/src", "tests"]
+}

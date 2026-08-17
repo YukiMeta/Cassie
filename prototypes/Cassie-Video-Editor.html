@@ -1,0 +1,1553 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cassie — Semantic Video Editor</title>
+  <meta name="description" content="Cassie：以语义主体、生命周期与状态机驱动的可控视频编辑器" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090a0f;
+      --surface: #11131a;
+      --surface-2: #171a23;
+      --surface-3: #20242f;
+      --line: rgba(255,255,255,.09);
+      --line-strong: rgba(255,255,255,.16);
+      --text: #f4f5f7;
+      --muted: #9aa0ad;
+      --dim: #666d7d;
+      --purple: #8c72ff;
+      --purple-2: #b5a7ff;
+      --mint: #63e6bd;
+      --amber: #f7c76c;
+      --red: #ff6b7a;
+      --blue: #6aa8ff;
+      --shadow: 0 24px 70px rgba(0,0,0,.42);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.45 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+
+    .topbar {
+      height: 62px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      background: rgba(9,10,15,.94);
+      backdrop-filter: blur(18px);
+      position: relative;
+      z-index: 20;
+    }
+    .brand, .top-actions, .project-meta, .mode-switch, .engine-pill { display: flex; align-items: center; }
+    .brand { gap: 11px; min-width: 248px; }
+    .brand-mark {
+      width: 30px; height: 30px; border-radius: 10px;
+      display: grid; place-items: center;
+      background: linear-gradient(145deg, var(--purple), #5a39dc);
+      box-shadow: 0 8px 24px rgba(140,114,255,.34);
+      font-weight: 800;
+    }
+    .brand-copy strong { display: block; font-size: 13px; letter-spacing: .01em; }
+    .brand-copy span { color: var(--muted); font-size: 11px; }
+    .project-meta { gap: 9px; color: var(--muted); }
+    .project-title { color: var(--text); font-weight: 650; }
+    .autosave { font-size: 11px; color: var(--mint); }
+    .engine-pill { gap: 6px; color: var(--muted); font-size: 9px; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 4px 8px; }
+    .engine-pill b { color: var(--purple-2); font-weight: 650; }
+    .mode-switch {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 3px;
+      border-radius: 10px;
+      gap: 2px;
+    }
+    .mode-switch button, .ghost-btn, .icon-btn, .secondary-btn {
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+    .mode-switch button {
+      padding: 7px 13px;
+      border-radius: 7px;
+      color: var(--muted);
+    }
+    .mode-switch button.active { background: var(--surface-3); color: var(--text); }
+    .top-actions { gap: 8px; min-width: 248px; justify-content: flex-end; }
+    .ghost-btn, .secondary-btn {
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+    }
+    .primary-btn {
+      border: 0;
+      border-radius: 9px;
+      padding: 9px 14px;
+      color: white;
+      background: linear-gradient(135deg, #967cff, #6545e8);
+      box-shadow: 0 9px 24px rgba(101,69,232,.28);
+      cursor: pointer;
+      font-weight: 650;
+    }
+    .primary-btn:hover { filter: brightness(1.08); }
+
+    .app {
+      height: calc(100vh - 62px);
+      display: grid;
+      grid-template-columns: 280px minmax(560px, 1fr) 360px;
+      grid-template-rows: minmax(390px, 1fr) 390px;
+    }
+    .panel { background: var(--surface); }
+    .sidebar {
+      grid-column: 1;
+      grid-row: 1 / 3;
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .stage-panel { grid-column: 2; grid-row: 1; background: #0c0e14; min-height: 0; }
+    .agent-panel { grid-column: 3; grid-row: 1; border-left: 1px solid var(--line); min-height: 0; overflow: auto; }
+    .timeline { grid-column: 2 / 4; grid-row: 2; border-top: 1px solid var(--line); min-width: 0; overflow: hidden; }
+
+    .panel-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      padding: 10px 10px 0;
+      gap: 4px;
+    }
+    .panel-tabs button {
+      border: 0;
+      color: var(--muted);
+      background: transparent;
+      border-radius: 8px;
+      padding: 8px 4px;
+      cursor: pointer;
+    }
+    .panel-tabs button.active { color: var(--text); background: var(--surface-3); }
+    .sidebar-head, .agent-head {
+      padding: 14px 14px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .eyebrow { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+    .sidebar-head strong, .agent-head strong { display: block; margin-top: 3px; font-size: 14px; }
+    .icon-btn {
+      width: 30px; height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid; place-items: center;
+      color: var(--muted);
+    }
+    .asset-scroll { overflow: auto; padding: 0 10px 16px; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .project-card, .library-card {
+      border: 1px solid var(--line); background: var(--surface-2); border-radius: 11px; padding: 10px; margin-bottom: 8px;
+    }
+    .project-card-head, .library-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .project-card-head strong, .library-head strong { font-size: 11px; }
+    .project-card-head span, .library-head span { color: var(--mint); font-size: 9px; }
+    .script-line { color: var(--muted); font-size: 9px; margin: 7px 0 0; padding-left: 8px; border-left: 2px solid rgba(140,114,255,.4); }
+    .storyboard-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 8px; }
+    .story-card { min-width: 0; }
+    .story-thumb { height: 46px; border-radius: 7px; position: relative; overflow: hidden; background: linear-gradient(145deg, #17162c, #54233e); border: 1px solid var(--line); }
+    .story-thumb::after { content: attr(data-shot); position: absolute; left: 4px; bottom: 3px; font-size: 8px; color: white; background: rgba(0,0,0,.45); border-radius: 4px; padding: 1px 4px; }
+    .story-thumb.s2 { background: radial-gradient(circle at 66% 35%, rgba(255,201,127,.5), transparent 15%), linear-gradient(145deg,#23172f,#6f3049); }
+    .story-thumb.s3 { background: radial-gradient(circle at 55% 45%, rgba(181,167,255,.5), transparent 12%), linear-gradient(145deg,#151a2d,#304b68); }
+    .story-card small { display: block; color: var(--dim); font-size: 8px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .upload-zone { border: 1px dashed rgba(140,114,255,.35); background: rgba(140,114,255,.05); border-radius: 10px; padding: 10px; text-align: center; color: var(--purple-2); font-size: 10px; cursor: pointer; margin-bottom: 9px; }
+    .upload-zone.selected, .upload-zone:hover { border-color: var(--purple); background: rgba(140,114,255,.10); }
+    .media-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .media-item { border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; padding: 6px; cursor: grab; min-width: 0; }
+    .media-preview { height: 58px; border-radius: 7px; position: relative; overflow: hidden; background: linear-gradient(145deg,#251a38,#7b3c63); }
+    .media-preview.hero { background: radial-gradient(circle at 57% 42%,rgba(255,255,255,.34),transparent 11%),linear-gradient(145deg,#17243b,#405f7a); }
+    .media-preview.audio { background: repeating-linear-gradient(90deg,rgba(247,199,108,.24) 0 3px,transparent 3px 7px),#262119; }
+    .media-preview.vo { background: repeating-linear-gradient(90deg,rgba(99,230,189,.22) 0 2px,transparent 2px 6px),#17231f; }
+    .media-preview::after { content: attr(data-kind); position: absolute; right: 4px; top: 4px; color: white; background: rgba(0,0,0,.48); border-radius: 4px; padding: 1px 4px; font-size: 7px; }
+    .media-item strong { display: block; margin-top: 5px; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .media-item small { color: var(--dim); font-size: 8px; }
+    .storage-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 9px; }
+    .storage-meter { flex: 1; height: 4px; background: #0b0d12; border-radius: 99px; overflow: hidden; }
+    .storage-meter span { display: block; width: 38%; height: 100%; background: var(--mint); }
+    .core-stack { display: grid; gap: 5px; margin-top: 8px; }
+    .core-layer { display: grid; grid-template-columns: 66px 1fr auto; gap: 7px; align-items: center; padding: 6px 7px; border: 1px solid var(--line); border-radius: 8px; font-size: 8px; }
+    .core-layer b { color: var(--purple-2); }
+    .core-layer span { color: var(--muted); }
+    .core-layer i { color: var(--mint); font-style: normal; }
+    .asset-ref { display: grid; grid-template-columns: 38px minmax(0,1fr); gap: 8px; align-items: start; cursor: pointer; }
+    .ref-mosaic { width: 38px; height: 38px; border-radius: 8px; padding: 2px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: #0e1016; border: 1px solid var(--line); }
+    .ref-mosaic i { border-radius: 3px; background: linear-gradient(145deg,#8c72ff,#322851); }
+    .ref-mosaic i:nth-child(2) { background: linear-gradient(145deg,#c7997f,#532038); }
+    .ref-mosaic i:nth-child(3) { background: linear-gradient(145deg,#60799a,#171d2b); }
+    .ref-mosaic i:nth-child(4) { background: linear-gradient(145deg,#c7a35a,#493d25); }
+    .asset-ref strong { display: block; font-size: 11px; color: var(--text); }
+    .asset-ref strong em { font-style: normal; color: var(--purple-2); }
+    .asset-ref p { color: var(--muted); margin: 2px 0 5px; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .asset-capabilities { display: flex; gap: 3px; flex-wrap: wrap; }
+    .asset-capabilities span { color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; font-size: 8px; }
+    .asset-capabilities .bound { color: var(--mint); border-color: rgba(99,230,189,.25); }
+    .section-label {
+      display: flex; justify-content: space-between; align-items: center;
+      color: var(--muted); font-size: 11px;
+      margin: 11px 4px 7px;
+    }
+    .asset-card, .layer-row {
+      border: 1px solid transparent;
+      background: var(--surface-2);
+      border-radius: 11px;
+      margin-bottom: 7px;
+      cursor: pointer;
+      transition: .16s ease;
+    }
+    .asset-card:hover, .layer-row:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+    .asset-card.selected, .layer-row.selected { border-color: rgba(140,114,255,.72); box-shadow: 0 0 0 2px rgba(140,114,255,.10); }
+    .asset-card { padding: 9px; display: grid; grid-template-columns: 52px 1fr auto; gap: 9px; align-items: center; }
+    .asset-thumb {
+      height: 52px; border-radius: 9px; overflow: hidden; position: relative;
+      background: linear-gradient(145deg, #40375a, #151720);
+    }
+    .asset-thumb.character::before {
+      content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+      top: 7px; left: 17px; background: #c7997f;
+      box-shadow: 0 14px 0 7px #8e2437;
+    }
+    .asset-thumb.product::before {
+      content: ""; position: absolute; width: 18px; height: 30px; border-radius: 4px 4px 6px 6px;
+      left: 17px; bottom: 7px;
+      background: linear-gradient(135deg, rgba(255,255,255,.7), rgba(165,112,255,.26));
+      border: 1px solid rgba(255,255,255,.55);
+      box-shadow: 0 -5px 0 -1px #d7c4ff;
+    }
+    .asset-thumb.scene { background: radial-gradient(circle at 68% 30%, #e7b87b 0 4%, transparent 5%), linear-gradient(145deg, #1c1830, #54233e 65%, #151720); }
+    .asset-thumb.scene::before {
+      content: ""; position: absolute; inset: auto -5px 0; height: 20px;
+      background: repeating-linear-gradient(105deg, #11131b 0 8px, #242839 8px 11px);
+      transform: skewY(-3deg);
+    }
+    .asset-copy strong { font-size: 12px; display: block; }
+    .asset-copy span { color: var(--muted); font-size: 10px; }
+    .lock-btn {
+      border: 0; background: transparent; cursor: pointer; color: var(--dim);
+      font-size: 14px; padding: 7px;
+    }
+    .lock-btn.locked { color: var(--amber); }
+    .layer-row { padding: 10px; display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 7px; }
+    .layer-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 0 4px rgba(140,114,255,.13); }
+    .layer-dot.mint { background: var(--mint); box-shadow: 0 0 0 4px rgba(99,230,189,.12); }
+    .layer-dot.blue { background: var(--blue); box-shadow: 0 0 0 4px rgba(106,168,255,.12); }
+    .layer-row span { font-size: 12px; }
+    .layer-row small { color: var(--dim); }
+
+    .stage-toolbar {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tool-group { display: flex; align-items: center; gap: 5px; }
+    .tool-btn {
+      border: 1px solid transparent; background: transparent; color: var(--muted);
+      padding: 7px 9px; border-radius: 8px; cursor: pointer;
+    }
+    .tool-btn:hover { background: var(--surface-2); color: var(--text); }
+    .tool-btn.active { color: var(--purple-2); border-color: rgba(140,114,255,.35); background: rgba(140,114,255,.12); }
+    .zoom { color: var(--dim); font-size: 11px; padding-left: 8px; }
+    .stage-workspace {
+      height: calc(100% - 48px);
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      position: relative;
+      background-image: radial-gradient(circle at 50% 45%, rgba(140,114,255,.07), transparent 42%),
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: auto, 28px 28px, 28px 28px;
+    }
+    .video-wrap { width: min(100%, 860px); position: relative; }
+    .video-frame {
+      aspect-ratio: 16/9;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      background: linear-gradient(180deg, #17162c 0%, #282037 52%, #15151c 100%);
+      box-shadow: var(--shadow), 0 0 0 1px rgba(255,255,255,.11);
+      user-select: none;
+    }
+    .video-frame::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(90deg, rgba(10,10,15,.44), transparent 25%, transparent 72%, rgba(10,10,15,.30)),
+        linear-gradient(0deg, rgba(7,7,10,.52), transparent 34%);
+      mix-blend-mode: multiply;
+    }
+    .sky-glow { position: absolute; width: 260px; height: 260px; border-radius: 50%; right: 8%; top: -24%; background: rgba(255,190,139,.19); filter: blur(20px); }
+    .building { position: absolute; bottom: 25%; background: #15151d; border-top: 1px solid rgba(255,255,255,.06); }
+    .building.one { left: 0; width: 25%; height: 58%; clip-path: polygon(0 8%, 88% 0, 100% 100%, 0 100%); }
+    .building.two { right: 0; width: 30%; height: 68%; clip-path: polygon(8% 0, 100% 13%, 100% 100%, 0 100%); }
+    .window-grid { position: absolute; inset: 18% 12%; opacity: .6; background: repeating-linear-gradient(90deg, transparent 0 22px, rgba(255,203,133,.6) 23px 25px), repeating-linear-gradient(0deg, transparent 0 24px, rgba(255,203,133,.22) 25px 27px); }
+    .street { position: absolute; left: -8%; right: -8%; bottom: -1%; height: 34%; transform: perspective(400px) rotateX(58deg); transform-origin: bottom; background: linear-gradient(90deg, #171820, #30313c 50%, #171820); }
+    .street::before { content: ""; position: absolute; width: 3px; height: 100%; left: 50%; background: linear-gradient(#f8dca1, transparent); opacity: .6; }
+    .lamp { position: absolute; width: 4px; height: 39%; background: #11131a; bottom: 24%; right: 18%; }
+    .lamp::before { content: ""; position: absolute; width: 42px; height: 42px; border-radius: 50%; left: -19px; top: -13px; background: radial-gradient(circle, #ffd59a 0 10%, rgba(255,192,122,.28) 28%, transparent 70%); filter: blur(.4px); }
+    .character-object { position: absolute; width: 18%; height: 68%; left: 35%; bottom: 9%; z-index: 4; cursor: pointer; transition: left .35s ease, transform .35s ease; }
+    .person-head { position: absolute; width: 30%; aspect-ratio: 1; left: 35%; top: 4%; border-radius: 48% 48% 44% 44%; background: linear-gradient(135deg, #d6aa8f, #9d725f); box-shadow: inset -8px 0 0 rgba(57,31,35,.45); }
+    .person-hair { position: absolute; width: 40%; height: 20%; left: 30%; top: 1%; border-radius: 55% 55% 30% 30%; background: #17151a; transform: rotate(-4deg); }
+    .person-body { position: absolute; width: 64%; height: 69%; left: 18%; top: 27%; border-radius: 42% 42% 14% 14%; background: linear-gradient(120deg, #9c233b, #431624); clip-path: polygon(25% 0, 75% 0, 100% 100%, 0 100%); box-shadow: 18px 15px 40px rgba(0,0,0,.33); }
+    .person-arm { position: absolute; width: 13%; height: 47%; left: 69%; top: 30%; border-radius: 14px; background: linear-gradient(#8a2539 0 50%, #bc8b74 51%); transform: rotate(-18deg); transform-origin: top; }
+    .product-object { position: absolute; width: 8%; height: 25%; left: 53%; bottom: 22%; z-index: 6; cursor: pointer; transition: left .4s ease, bottom .4s ease, transform .4s ease, opacity .25s ease; }
+    .bottle-cap { width: 38%; height: 19%; margin: 0 auto -1px; border-radius: 4px 4px 1px 1px; background: linear-gradient(90deg, #d8b46b, #fff0ad 48%, #9b7338); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+    .bottle-body { position: relative; width: 100%; height: 81%; border-radius: 10px 10px 16px 16px; background: linear-gradient(135deg, rgba(255,255,255,.73), rgba(177,114,255,.17) 43%, rgba(88,44,121,.52)); border: 1px solid rgba(255,255,255,.55); box-shadow: inset 7px 0 12px rgba(255,255,255,.16), 0 14px 30px rgba(0,0,0,.48); }
+    .bottle-label { position: absolute; left: 13%; right: 13%; top: 33%; height: 28%; border: 1px solid rgba(255,255,255,.58); background: rgba(20,18,28,.56); display: grid; place-items: center; font-size: clamp(5px, .7vw, 9px); letter-spacing: .17em; color: #f7e8ff; }
+    .product-object.blue .bottle-body { background: linear-gradient(135deg, rgba(255,255,255,.78), rgba(70,150,255,.30) 44%, rgba(22,63,134,.73)); }
+    .product-object.silver .bottle-body { background: linear-gradient(135deg, #f3f5f7, #9ca3ad 42%, #404650 78%, #d9dde2); border-color: rgba(255,255,255,.75); }
+    .product-object.silver .bottle-cap { background: linear-gradient(90deg, #6d737b, #eef1f4 48%, #5a6069); }
+    .logo-layer { position: absolute; z-index: 7; right: 6%; bottom: 7%; letter-spacing: .34em; font-weight: 650; font-size: clamp(10px, 1.3vw, 18px); color: rgba(255,255,255,.83); cursor: pointer; }
+    .canvas-object::after {
+      content: attr(data-label); position: absolute; left: -1px; top: -24px;
+      padding: 3px 7px; border-radius: 6px; background: var(--purple); color: white;
+      font-size: 9px; white-space: nowrap; opacity: 0; transform: translateY(3px); transition: .15s;
+    }
+    .canvas-object.selected { outline: 1.5px solid var(--purple); outline-offset: 5px; }
+    .canvas-object.selected::after { opacity: 1; transform: none; }
+    .logo-layer.selected { outline-offset: 7px; }
+    .annotation-box {
+      position: absolute; display: none; z-index: 12; border: 2px solid var(--mint);
+      background: rgba(99,230,189,.08); box-shadow: 0 0 0 1px rgba(0,0,0,.5), inset 0 0 24px rgba(99,230,189,.08);
+      pointer-events: none;
+    }
+    .annotation-box::before { content: "标注区域"; position: absolute; left: -2px; top: -24px; color: #06110e; background: var(--mint); padding: 3px 7px; border-radius: 6px; font-size: 9px; }
+    .safe-frame { position: absolute; inset: 7%; border: 1px dashed rgba(255,255,255,.18); z-index: 9; pointer-events: none; }
+    .frame-info {
+      position: absolute; left: 12px; bottom: 10px; z-index: 11;
+      display: flex; gap: 8px; align-items: center;
+      color: rgba(255,255,255,.7); font-size: 10px;
+    }
+    .frame-info span { background: rgba(8,9,13,.54); border: 1px solid rgba(255,255,255,.1); padding: 4px 7px; border-radius: 6px; backdrop-filter: blur(8px); }
+    .selection-toolbar {
+      position: absolute; top: -45px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 5px; padding: 5px; border-radius: 10px;
+      border: 1px solid var(--line-strong); background: rgba(22,24,33,.96); box-shadow: 0 12px 30px rgba(0,0,0,.35);
+      opacity: 0; pointer-events: none; transition: .15s;
+    }
+    .selection-toolbar.visible { opacity: 1; pointer-events: auto; }
+    .selection-toolbar button { border: 0; border-radius: 7px; background: transparent; color: var(--muted); padding: 6px 9px; cursor: pointer; white-space: nowrap; }
+    .selection-toolbar button:hover { background: var(--surface-3); color: var(--text); }
+
+    .agent-head { position: sticky; top: 0; background: var(--surface); z-index: 3; border-bottom: 1px solid var(--line); }
+    .agent-status { display: inline-flex; align-items: center; gap: 6px; color: var(--mint); font-size: 10px; }
+    .agent-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(99,230,189,.1); }
+    .agent-body { padding: 12px; }
+    .context-card, .plan-card, .agent-message {
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      border-radius: 12px;
+      padding: 11px;
+      margin-bottom: 10px;
+    }
+    .context-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .context-title strong { font-size: 11px; }
+    .context-title span { color: var(--muted); font-size: 10px; }
+    .context-grid { display: grid; grid-template-columns: 82px 1fr; gap: 6px 8px; font-size: 11px; }
+    .context-grid dt { color: var(--dim); }
+    .context-grid dd { margin: 0; color: #d8dbe3; }
+    .lock-chip { display: inline-flex; align-items: center; gap: 4px; color: var(--amber); border: 1px solid rgba(247,199,108,.24); background: rgba(247,199,108,.07); border-radius: 99px; padding: 2px 7px; margin: 2px 3px 2px 0; font-size: 9px; }
+    .scope-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+    .scope-chip { border: 1px solid var(--line); color: var(--muted); background: transparent; border-radius: 99px; padding: 5px 8px; cursor: pointer; font-size: 10px; }
+    .scope-chip.active { color: var(--purple-2); border-color: rgba(140,114,255,.4); background: rgba(140,114,255,.1); }
+    .quick-prompts { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 9px; }
+    .quick-prompts button { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 8px; padding: 5px 7px; cursor: pointer; font-size: 9px; }
+    .quick-prompts button:hover { color: var(--text); border-color: var(--line-strong); }
+    .composer { border: 1px solid var(--line-strong); background: #0f1118; border-radius: 12px; padding: 9px; }
+    .composer input { width: 100%; border: 0; background: transparent; color: var(--text); padding: 3px 2px 10px; }
+    .composer input::placeholder { color: #5f6573; }
+    .composer-row { display: flex; align-items: center; justify-content: space-between; }
+    .composer-tools { display: flex; gap: 5px; position: relative; }
+    .reference-btn { border: 0; background: var(--surface-3); color: var(--purple-2); border-radius: 8px; padding: 0 9px; cursor: pointer; }
+    .reference-menu { display: none; position: absolute; left: 0; bottom: 38px; width: 218px; padding: 7px; background: #20232d; border: 1px solid var(--line-strong); border-radius: 11px; box-shadow: var(--shadow); z-index: 20; }
+    .reference-menu.visible { display: grid; gap: 4px; }
+    .reference-option { border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; padding: 7px; cursor: pointer; font-size: 10px; }
+    .reference-option:hover { background: rgba(140,114,255,.12); }
+    .reference-option b { color: var(--purple-2); }
+    .reference-option span { color: var(--muted); display: block; font-size: 8px; margin-top: 2px; }
+    .reference-chips { display: flex; gap: 4px; flex-wrap: wrap; margin: 7px 0 0; }
+    .reference-token { border: 1px solid rgba(140,114,255,.28); background: rgba(140,114,255,.08); color: var(--purple-2); border-radius: 99px; padding: 3px 7px; font-size: 9px; }
+    .mic-btn { width: 30px; height: 30px; border: 0; border-radius: 8px; background: var(--surface-3); color: var(--muted); cursor: pointer; }
+    .plan-btn { padding: 8px 12px; }
+    .plan-card { display: none; border-color: rgba(140,114,255,.26); background: linear-gradient(180deg, rgba(140,114,255,.08), rgba(23,26,35,.95)); }
+    .plan-card.visible { display: block; animation: rise .25s ease; }
+    @keyframes rise { from { opacity: 0; transform: translateY(5px); } }
+    .plan-step { display: grid; grid-template-columns: 20px 1fr; gap: 7px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+    .plan-step:last-child { border-bottom: 0; }
+    .step-index { width: 18px; height: 18px; border-radius: 50%; background: rgba(140,114,255,.14); color: var(--purple-2); display: grid; place-items: center; font-size: 9px; }
+    .plan-step strong { display: block; font-size: 10px; }
+    .plan-step span { color: var(--muted); font-size: 9px; }
+    .impact-bar { margin: 8px 0; height: 6px; border-radius: 99px; background: #2a2e3a; overflow: hidden; }
+    .impact-bar span { display: block; width: 34%; height: 100%; margin-left: 40%; background: linear-gradient(90deg, var(--purple), var(--mint)); border-radius: inherit; }
+    .estimate { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; margin: 7px 0 10px; }
+    .execute-btn { width: 100%; }
+    .agent-message { display: none; color: var(--muted); font-size: 10px; }
+    .agent-message.visible { display: block; }
+    .agent-message .log { margin: 5px 0; display: flex; align-items: center; gap: 7px; }
+    .agent-message .log::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dim); }
+    .agent-message .log.done { color: #d9efe8; }
+    .agent-message .log.done::before { background: var(--mint); }
+    .harness-card {
+      border: 1px solid rgba(99,230,189,.18); background: linear-gradient(180deg, rgba(99,230,189,.055), rgba(23,26,35,.96));
+      border-radius: 12px; padding: 11px; margin-bottom: 10px;
+    }
+    .harness-flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 9px 0; }
+    .harness-node {
+      min-height: 42px; padding: 6px; border-radius: 8px; border: 1px solid var(--line);
+      background: rgba(9,10,15,.5); color: var(--dim); font-size: 8px; transition: .22s ease;
+    }
+    .harness-node b { display: block; color: inherit; font-size: 9px; margin-bottom: 2px; }
+    .harness-node.active { border-color: rgba(140,114,255,.65); background: rgba(140,114,255,.13); color: var(--purple-2); box-shadow: 0 0 0 2px rgba(140,114,255,.07); }
+    .harness-node.done { border-color: rgba(99,230,189,.35); background: rgba(99,230,189,.08); color: #b9f8e5; }
+    .lifecycle { display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: center; margin-top: 8px; }
+    .lifecycle-track { height: 7px; border-radius: 99px; background: #292d38; position: relative; overflow: hidden; }
+    .lifecycle-span { position: absolute; top: 0; bottom: 0; border-radius: inherit; background: linear-gradient(90deg, var(--mint), var(--purple)); }
+    .lifecycle-readout { color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+    .impact-list { display: grid; gap: 5px; margin-top: 8px; }
+    .impact-row { display: grid; grid-template-columns: 56px 1fr auto; gap: 7px; align-items: center; font-size: 9px; }
+    .impact-row b { color: var(--muted); font-weight: 500; }
+    .impact-row span { color: #d9dce5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .impact-tag { border: 1px solid var(--line); border-radius: 99px; padding: 2px 5px; color: var(--dim); }
+    .impact-tag.change { color: var(--purple-2); border-color: rgba(140,114,255,.32); }
+    .impact-tag.guard { color: var(--amber); border-color: rgba(247,199,108,.28); }
+    .patch-preview { margin: 9px 0; padding: 8px; border-radius: 9px; background: #0b0d13; border: 1px solid var(--line); color: #bdc3d1; font: 9px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    .patch-preview .minus { color: #ff9aa5; }
+    .patch-preview .plus { color: #7af0ca; }
+    .segment.affected { box-shadow: inset 0 0 0 1px var(--purple), 0 0 14px rgba(140,114,255,.22); filter: brightness(1.18); }
+    .track-row.dependency .track-label { color: var(--purple-2); background: rgba(140,114,255,.06); }
+    .propagation-range { position: absolute; top: 2px; bottom: 2px; border: 1px dashed rgba(99,230,189,.72); background: rgba(99,230,189,.06); border-radius: 6px; pointer-events: none; z-index: 4; display: none; }
+    .propagation-range.visible { display: block; }
+
+    .timeline-head { height: 45px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
+    .transport { display: flex; align-items: center; gap: 7px; }
+    .play-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--text); cursor: pointer; }
+    .timecode { font-variant-numeric: tabular-nums; font-size: 12px; min-width: 78px; }
+    .selection-readout { color: var(--muted); font-size: 10px; }
+    .timeline-tools { display: flex; gap: 6px; align-items: center; }
+    .edit-tool { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+    .edit-tool:hover, .edit-tool.active { color: var(--text); background: var(--surface-3); border-color: var(--line-strong); }
+    .edit-tool:disabled { opacity: .35; cursor: default; }
+    .timeline-view { display: flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+    .timeline-view button { border: 0; background: transparent; color: var(--dim); padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 9px; }
+    .timeline-view button.active { background: rgba(140,114,255,.13); color: var(--purple-2); }
+    .zoom-range { width: 68px; accent-color: var(--purple); }
+    .timeline-body { height: 278px; overflow: auto; background: #0d0f15; }
+    .ruler-row, .track-row { display: grid; grid-template-columns: 126px minmax(720px, 1fr); min-width: 920px; }
+    .ruler-row { position: sticky; top: 0; z-index: 8; background: #0d0f15; }
+    .track-label { padding: 7px 8px; color: var(--muted); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 10px; display: flex; align-items: center; gap: 5px; }
+    .track-label b { color: var(--dim); font-weight: 500; }
+    .track-canvas { height: 42px; position: relative; border-bottom: 1px solid var(--line); background-image: linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: calc(100% / 15) 100%; }
+    .ruler-row .track-canvas { height: 26px; }
+    .tick { position: absolute; top: 5px; color: var(--dim); font-size: 8px; transform: translateX(-1px); }
+    .segment { position: absolute; top: 4px; bottom: 4px; border-radius: 6px; border: 1px solid rgba(255,255,255,.07); display: flex; align-items: center; padding: 0 7px; font-size: 9px; color: rgba(255,255,255,.82); overflow: hidden; white-space: nowrap; cursor: pointer; }
+    .segment:hover { filter: brightness(1.12); }
+    .segment.shot1 { left: .5%; width: 26%; background: linear-gradient(90deg, #3e2d6f, #59418d); }
+    .segment.shot2 { left: 27%; width: 39%; background: linear-gradient(90deg, #4c315c, #743d6a); }
+    .segment.shot3 { left: 66.5%; width: 33%; background: linear-gradient(90deg, #2e5266, #2d6c75); }
+    .segment.state { background: rgba(99,230,189,.12); border-color: rgba(99,230,189,.25); color: #b9f8e5; }
+    .segment.state-a { left: .5%; width: 26%; }
+    .segment.state-b { left: 27%; width: 39%; }
+    .segment.state-c { left: 66.5%; width: 33%; }
+    .segment.camera { background: rgba(106,168,255,.11); border-color: rgba(106,168,255,.25); color: #bed8ff; }
+    .segment.audio { left: .5%; width: 99%; background: repeating-linear-gradient(90deg, rgba(247,199,108,.17) 0 4px, rgba(247,199,108,.08) 4px 8px); border-color: rgba(247,199,108,.23); color: #fbe2ac; }
+    .segment.voice { left: 8%; width: 58%; background: repeating-linear-gradient(90deg, rgba(99,230,189,.16) 0 3px, rgba(99,230,189,.07) 3px 7px); border-color: rgba(99,230,189,.24); color: #c5f6e7; }
+    .segment.caption { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.15); color: #e6e8ed; }
+    .segment.split-clip { background: linear-gradient(90deg,#4b315e,#71406b); }
+    .track-control { width: 17px; height: 17px; display: grid; place-items: center; border: 0; border-radius: 4px; padding: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 8px; }
+    .track-control:hover, .track-control.on { color: var(--text); background: var(--surface-3); }
+    .track-row.hidden-track .track-canvas { opacity: .18; }
+    .track-row.locked-track .track-canvas { filter: saturate(.55); }
+    .track-row.muted-track .track-canvas { opacity: .38; }
+    body[data-timeline-view="edit"] .semantic-track { display: none; }
+    .semantic-track .track-label::before { content: "SPEC"; color: var(--mint); font-size: 6px; border: 1px solid rgba(99,230,189,.24); border-radius: 3px; padding: 1px 2px; }
+    .semantic-clip { position: absolute; top: 6px; bottom: 6px; border: 1px solid rgba(99,230,189,.34); border-radius: 8px; background: linear-gradient(90deg, rgba(99,230,189,.12), rgba(140,114,255,.14)); color: #c7f8e9; z-index: 3; min-width: 28px; cursor: grab; overflow: visible; }
+    .semantic-clip.dragging { cursor: grabbing; box-shadow: 0 0 0 2px rgba(140,114,255,.25); }
+    .semantic-clip.affected { border-color: var(--mint); box-shadow: 0 0 0 2px rgba(99,230,189,.10), 0 0 16px rgba(99,230,189,.12); }
+    .semantic-clip .clip-name { position: absolute; left: 12px; top: 6px; right: 12px; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 3; pointer-events: none; }
+    .motion-path { position: absolute; inset: 2px 7px; width: calc(100% - 14px); height: calc(100% - 4px); opacity: .65; pointer-events: none; }
+    .motion-path path { fill: none; stroke: rgba(181,167,255,.8); stroke-width: 1.4; stroke-dasharray: 3 3; }
+    .motion-path circle { fill: var(--mint); }
+    .edge-handle { position: absolute; top: 50%; width: 10px; height: 26px; border-radius: 5px; transform: translateY(-50%); border: 1px solid rgba(255,255,255,.35); background: #252a35; cursor: ew-resize; z-index: 5; }
+    .edge-handle::after { content: ""; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: rgba(255,255,255,.45); }
+    .edge-handle.in { left: -5px; }
+    .edge-handle.out { right: -5px; }
+    .entry-label, .exit-label { position: absolute; top: -15px; font-size: 8px; color: var(--mint); white-space: nowrap; opacity: 0; transition: .15s; pointer-events: none; }
+    .entry-label { left: -4px; } .exit-label { right: -4px; }
+    .semantic-clip:hover .entry-label, .semantic-clip:hover .exit-label, .semantic-clip.dragging .entry-label, .semantic-clip.dragging .exit-label { opacity: 1; }
+    .track-hint { color: var(--dim); font-size: 8px; margin-left: auto; }
+    .selection-range { position: absolute; top: 0; bottom: 0; left: 40%; width: 27%; background: rgba(140,114,255,.10); border-left: 1px solid var(--purple); border-right: 1px solid var(--purple); pointer-events: none; z-index: 2; }
+    .playhead { position: absolute; top: 0; bottom: 0; left: 53.33%; width: 1px; background: #ff5972; z-index: 6; pointer-events: none; }
+    .playhead::before { content: ""; width: 9px; height: 9px; border-radius: 2px 2px 50% 50%; background: #ff5972; position: absolute; left: -4px; top: -1px; }
+    .timeline-overlay { position: absolute; inset: 0; cursor: ew-resize; z-index: 5; }
+    .transcript {
+      height: 67px; display: flex; align-items: center; gap: 7px; padding: 8px 12px;
+      border-top: 1px solid var(--line); background: var(--surface); overflow-x: auto;
+    }
+    .transcript-label { color: var(--dim); font-size: 10px; min-width: 72px; }
+    .transcript-chip { border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); border-radius: 9px; padding: 7px 9px; white-space: nowrap; cursor: pointer; font-size: 10px; }
+    .transcript-chip:hover, .transcript-chip.active { color: var(--text); border-color: rgba(140,114,255,.4); background: rgba(140,114,255,.11); }
+    .transcript-chip b { color: var(--dim); font-weight: 500; margin-right: 5px; }
+    .toast { position: fixed; right: 18px; bottom: 18px; z-index: 50; background: #20242d; border: 1px solid var(--line-strong); border-radius: 12px; padding: 11px 14px; box-shadow: var(--shadow); color: #ddf8ee; opacity: 0; transform: translateY(8px); pointer-events: none; transition: .2s; }
+    .toast.visible { opacity: 1; transform: none; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 80; display: none; place-items: center; background: rgba(5,6,9,.72); backdrop-filter: blur(10px); }
+    .modal-backdrop.visible { display: grid; }
+    .export-modal { width: min(440px,calc(100vw - 32px)); border: 1px solid var(--line-strong); border-radius: 16px; padding: 16px; background: #171a23; box-shadow: var(--shadow); }
+    .modal-head { display: flex; align-items: start; justify-content: space-between; margin-bottom: 14px; }
+    .modal-head strong { display: block; font-size: 15px; }
+    .modal-head span { color: var(--muted); font-size: 9px; }
+    .export-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .export-option { border: 1px solid var(--line); border-radius: 9px; padding: 8px; background: #101219; }
+    .export-option label { color: var(--dim); font-size: 8px; display: block; margin-bottom: 4px; }
+    .export-option select { width: 100%; border: 0; background: transparent; color: var(--text); }
+    .render-route { margin: 10px 0; padding: 9px; border: 1px solid rgba(99,230,189,.22); border-radius: 9px; color: var(--muted); font-size: 9px; background: rgba(99,230,189,.05); }
+    .render-route b { color: var(--mint); }
+    .export-progress { display: none; height: 5px; border-radius: 99px; overflow: hidden; background: #0b0d12; margin: 10px 0; }
+    .export-progress.visible { display: block; }
+    .export-progress span { display: block; width: 0; height: 100%; background: linear-gradient(90deg,var(--purple),var(--mint)); transition: width .35s; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 7px; }
+
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: 250px minmax(500px,1fr) 320px; }
+      .brand, .top-actions { min-width: auto; }
+    }
+    @media (max-width: 960px) {
+      body { overflow: auto; }
+      .app { min-width: 780px; grid-template-columns: 210px 1fr; grid-template-rows: 540px 360px 390px; height: auto; }
+      .sidebar { grid-row: 1 / 4; }
+      .stage-panel { grid-column: 2; grid-row: 1; }
+      .agent-panel { grid-column: 2; grid-row: 2; border-left: 0; border-top: 1px solid var(--line); }
+      .timeline { grid-column: 2; grid-row: 3; }
+      .mode-switch { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">C</div>
+      <div class="brand-copy"><strong>Cassie</strong><span>Semantic Video Editor</span></div>
+    </div>
+    <div class="project-meta">
+      <span class="project-title">Projects / NOCTURNE / Director Cut</span>
+      <span>·</span><span>15s / 9:16</span>
+      <span class="autosave" id="autosaveState">● 已保存到本地</span>
+      <span class="engine-pill"><b>Cassie Spec</b> × OpenCut Core</span>
+    </div>
+    <nav class="mode-switch" aria-label="工作模式">
+      <button>故事板</button><button class="active">导演画布</button><button>成片</button>
+    </nav>
+    <div class="top-actions">
+      <button class="edit-tool" id="undoBtn" title="撤销 ⌘Z" disabled>↶</button>
+      <button class="edit-tool" id="redoBtn" title="重做 ⇧⌘Z" disabled>↷</button>
+      <button class="ghost-btn">版本 03</button>
+      <button class="primary-btn" id="exportBtn">导出成片</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <aside class="sidebar panel">
+      <div class="panel-tabs">
+        <button class="active" data-tab="project">项目</button>
+        <button data-tab="media">媒体</button>
+        <button data-tab="assets">资产</button>
+        <button data-tab="layers">图层</button>
+      </div>
+      <div class="sidebar-head">
+        <div><span class="eyebrow" id="sidebarEyebrow">Project Context</span><strong id="sidebarTitle">剧本与分镜</strong></div>
+        <button class="icon-btn" id="addAssetBtn" aria-label="添加资产">＋</button>
+      </div>
+      <div class="asset-scroll">
+        <div class="tab-content active" data-panel="project">
+          <div class="section-label"><span>创作基线</span><span>已完成</span></div>
+          <div class="project-card">
+            <div class="project-card-head"><strong>剧本 · NOCTURNE 15s</strong><span>LOCKED</span></div>
+            <p class="script-line">巴黎夜色中，Mia 停下脚步，拿出香水。镜头推近，商品在玻璃音效处切入 Hero Packshot。</p>
+          </div>
+          <div class="project-card">
+            <div class="project-card-head"><strong>分镜板</strong><span>3 SHOTS</span></div>
+            <div class="storyboard-strip">
+              <div class="story-card"><div class="story-thumb" data-shot="01"></div><small>进入夜景 · 4s</small></div>
+              <div class="story-card"><div class="story-thumb s2" data-shot="02"></div><small>展示商品 · 6s</small></div>
+              <div class="story-card"><div class="story-thumb s3" data-shot="03"></div><small>Hero · 5s</small></div>
+            </div>
+          </div>
+          <div class="project-card">
+            <div class="project-card-head"><strong>导演约束</strong><span>4 RULES</span></div>
+            <p class="script-line">人物身份不变 · 商品 Logo 可读 · 暖侧光持续 · 10.5s 玻璃音效不可移动</p>
+          </div>
+          <div class="project-card">
+            <div class="project-card-head"><strong>编辑器运行栈</strong><span>LOCAL-FIRST</span></div>
+            <div class="core-stack">
+              <div class="core-layer"><b>Cassie</b><span>语义图 · Harness · Video Spec</span><i>产品层</i></div>
+              <div class="core-layer"><b>Editor Core</b><span>Command · Timeline · Playback</span><i>确定性</i></div>
+              <div class="core-layer"><b>Media</b><span>本地媒体 · 项目状态 · 代理文件</span><i>本机</i></div>
+              <div class="core-layer"><b>Render</b><span>预览合成 · FFmpeg 导出</span><i>队列</i></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-content" data-panel="media">
+          <div class="upload-zone" id="importMediaZone">＋ 导入视频、音频或图片<input type="file" id="mediaInput" accept="video/*,audio/*,image/*" multiple hidden></div>
+          <div class="section-label"><span>本项目媒体</span><span id="mediaCount">4 项</span></div>
+          <div class="media-grid" id="mediaGrid">
+            <div class="media-item" draggable="true"><div class="media-preview" data-kind="VIDEO"></div><strong>night_walk_01.mp4</strong><small>00:06 · 18.4 MB</small></div>
+            <div class="media-item" draggable="true"><div class="media-preview hero" data-kind="VIDEO"></div><strong>hero_packshot.mov</strong><small>00:05 · 24.1 MB</small></div>
+            <div class="media-item" draggable="true"><div class="media-preview audio" data-kind="AUDIO"></div><strong>nocturne_mix.wav</strong><small>00:15 · 9.8 MB</small></div>
+            <div class="media-item" draggable="true"><div class="media-preview vo" data-kind="VOICE"></div><strong>mia_vo_zh.wav</strong><small>00:10 · @Mia</small></div>
+          </div>
+          <div class="storage-row"><span>本地媒体 52.3 MB</span><div class="storage-meter"><span></span></div><span>OPFS</span></div>
+          <div class="project-card" style="margin-top:10px"><div class="project-card-head"><strong>媒体策略</strong><span>PRIVATE</span></div><p class="script-line">普通剪辑留在本机；只有明确选择“AI 生成”的片段才进入模型任务。</p></div>
+        </div>
+
+        <div class="tab-content" data-panel="assets">
+          <div class="upload-zone" id="uploadAssetZone">＋ 上传长期资产或补充参考</div>
+          <div class="section-label"><span>长期资产库</span><span>使用 @ 引用</span></div>
+          <div class="library-card asset-ref" data-reference="@Mia">
+            <div class="ref-mosaic"><i></i><i></i><i></i><i></i></div>
+            <div><strong><em>@Mia</em> · 人物 A</strong><p>身份资产 · 跨项目可用</p><div class="asset-capabilities"><span>三视图 ×3</span><span class="bound">声音已绑定</span><span>身份 DNA</span></div></div>
+          </div>
+          <div class="library-card asset-ref" data-reference="@Nocturne_Bottle">
+            <div class="ref-mosaic"><i></i><i></i><i></i><i></i></div>
+            <div><strong><em>@Nocturne_Bottle</em></strong><p>商品主资产 · 包装版本 2</p><div class="asset-capabilities"><span>三视图 ×4</span><span class="bound">Logo 纹理</span><span>材质参考</span></div></div>
+          </div>
+          <div class="library-card asset-ref" data-reference="@Paris_Night">
+            <div class="ref-mosaic"><i></i><i></i><i></i><i></i></div>
+            <div><strong><em>@Paris_Night</em></strong><p>场景资产 · 暖侧光</p><div class="asset-capabilities"><span>环境图 ×6</span><span>光照参考</span><span>空间布局</span></div></div>
+          </div>
+          <div class="section-label"><span>本项目引用</span><span>3</span></div>
+          <div class="context-card"><span class="reference-token">@Mia</span><span class="reference-token">@Nocturne_Bottle</span><span class="reference-token">@Paris_Night</span></div>
+        </div>
+
+        <div class="tab-content" data-panel="layers">
+          <div class="section-label"><span>主体与锁</span><span>3</span></div>
+          <article class="asset-card" data-select="character"><div class="asset-thumb character"></div><div class="asset-copy"><strong>人物 A · Mia</strong><span>00.0s—10.0s · @Mia</span></div><button class="lock-btn locked" data-lock="人物身份" title="锁定人物">▣</button></article>
+          <article class="asset-card selected" data-select="product"><div class="asset-thumb product"></div><div class="asset-copy"><strong>香水瓶 B</strong><span>04.0s—15.0s · @Nocturne_Bottle</span></div><button class="lock-btn locked" data-lock="商品与Logo" title="锁定商品">▣</button></article>
+          <article class="asset-card" data-select="scene"><div class="asset-thumb scene"></div><div class="asset-copy"><strong>巴黎夜景</strong><span>00.0s—15.0s · @Paris_Night</span></div><button class="lock-btn" data-lock="背景场景" title="锁定场景">□</button></article>
+          <div class="section-label"><span>语义图层</span><span>可寻址</span></div>
+          <div class="layer-row" data-select="character"><span class="layer-dot"></span><span>人物 A</span><small>V1</small></div>
+          <div class="layer-row selected" data-select="product"><span class="layer-dot mint"></span><span>香水瓶 B</span><small>V2</small></div>
+          <div class="layer-row" data-select="logo"><span class="layer-dot blue"></span><span>品牌文案</span><small>G1</small></div>
+          <div class="section-label"><span>全局锁</span><span>2</span></div>
+          <div class="context-card"><span class="lock-chip">▣ 人物身份</span><span class="lock-chip">▣ 商品与Logo</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="stage-panel">
+      <div class="stage-toolbar">
+        <div class="tool-group">
+          <button class="tool-btn active" id="selectTool">↖ 选择</button>
+          <button class="tool-btn" id="annotateTool">▱ 标注</button>
+          <button class="tool-btn" id="motionTool">↝ 动作</button>
+          <button class="tool-btn">T 文字</button>
+        </div>
+        <div class="tool-group"><span class="zoom">适应画布 · 72%</span><button class="tool-btn">⌗ 安全框</button><button class="tool-btn">⋯</button></div>
+      </div>
+      <div class="stage-workspace">
+        <div class="video-wrap">
+          <div class="selection-toolbar visible" id="selectionToolbar">
+            <button data-action="annotate">标注</button><button data-action="lock">锁定</button><button data-action="replace">替换</button><button data-action="remove">移除</button>
+          </div>
+          <div class="video-frame" id="videoFrame" aria-label="视频空间画布">
+            <div class="sky-glow"></div>
+            <div class="building one"><div class="window-grid"></div></div>
+            <div class="building two"><div class="window-grid"></div></div>
+            <div class="street"></div><div class="lamp"></div>
+            <div class="canvas-object character-object" data-object="character" data-label="人物 A · Mia">
+              <div class="person-hair"></div><div class="person-head"></div><div class="person-body"></div><div class="person-arm"></div>
+            </div>
+            <div class="canvas-object product-object selected" data-object="product" data-label="香水瓶 B">
+              <div class="bottle-cap"></div><div class="bottle-body"><div class="bottle-label">NOCTURNE</div></div>
+            </div>
+            <div class="canvas-object logo-layer" data-object="logo" data-label="品牌文案">NOCTURNE</div>
+            <div class="safe-frame"></div>
+            <div class="annotation-box" id="annotationBox"></div>
+            <div class="frame-info"><span id="shotLabel">镜头 02 · 展示商品</span><span id="frameTime">00:08.0</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="agent-panel panel">
+      <div class="agent-head">
+        <div><span class="eyebrow">Subject Harness</span><strong>语义修改编译器</strong></div>
+        <span class="agent-status" id="agentStatus">等待指令</span>
+      </div>
+      <div class="agent-body">
+        <div class="context-card">
+          <div class="context-title"><strong>当前上下文</strong><span id="contextBadge">已绑定实体</span></div>
+          <dl class="context-grid">
+            <dt>Annotation</dt><dd id="selectedTarget">香水瓶 B</dd>
+            <dt>请求范围</dt><dd id="selectedRange">04.0s — 15.0s</dd>
+            <dt>主体生命期</dt><dd id="lifecycleText">04.0s — 15.0s</dd>
+            <dt>状态</dt><dd id="selectedState">held_by_character_A</dd>
+            <dt>传播</dt><dd id="selectedScope">主体生命周期</dd>
+            <dt>硬锁</dt><dd id="lockList"><span class="lock-chip">人物身份</span><span class="lock-chip">商品与Logo</span></dd>
+          </dl>
+          <div class="scope-row" aria-label="修改范围">
+            <button class="scope-chip">此刻</button><button class="scope-chip">本镜头</button><button class="scope-chip active">主体生命周期</button><button class="scope-chip">从这里开始</button><button class="scope-chip">全片</button>
+          </div>
+        </div>
+
+        <div class="harness-card" id="harnessCard">
+          <div class="context-title"><strong>主体 Harness 状态机</strong><span id="harnessState">BOUND</span></div>
+          <div class="harness-flow" id="harnessFlow">
+            <div class="harness-node done" data-state="BOUND"><b>01 · BOUND</b>绑定语义主体</div>
+            <div class="harness-node active" data-state="TRACED"><b>02 · TRACE</b>追踪出现与消失</div>
+            <div class="harness-node" data-state="IMPACTED"><b>03 · IMPACT</b>计算时间线传播</div>
+            <div class="harness-node" data-state="GUARDED"><b>04 · GUARD</b>检查关系与硬锁</div>
+            <div class="harness-node" data-state="COMPILED"><b>05 · COMPILE</b>生成级联 Patch</div>
+            <div class="harness-node" data-state="COMMITTED"><b>06 · COMMIT</b>验证并提交版本</div>
+          </div>
+          <div class="lifecycle">
+            <div class="lifecycle-track"><span class="lifecycle-span" id="lifecycleSpan" style="left:26.67%;width:73.33%"></span></div>
+            <span class="lifecycle-readout" id="lifecycleReadout">出现 04.0 → 消失 15.0</span>
+          </div>
+          <div class="impact-list" id="impactList">
+            <div class="impact-row"><b>主状态</b><span>香水瓶 B · 04.0s—15.0s</span><i class="impact-tag change">CHANGE</i></div>
+            <div class="impact-row"><b>关系</b><span>人物 A 手持 · 04.0s—10.0s</span><i class="impact-tag guard">RECHECK</i></div>
+            <div class="impact-row"><b>构图</b><span>镜头 03 商品特写</span><i class="impact-tag guard">REFLOW</i></div>
+            <div class="impact-row"><b>保护</b><span>Logo、人物身份、音乐</span><i class="impact-tag guard">LOCK</i></div>
+          </div>
+        </div>
+
+        <div class="quick-prompts">
+          <button data-prompt="让香水瓶从第8秒开始变成蓝色，Logo和人物保持不变">瓶身变蓝</button>
+          <button data-prompt="把香水瓶替换成磨砂银瓶，从第一次出现到消失都保持同一个商品">全生命期替换</button>
+          <button data-prompt="把商品第一次出现提前2秒，音乐节奏保持不变">提前露出</button>
+          <button data-prompt="只把这一段改成商品特写，其他镜头都不要动">改为特写</button>
+        </div>
+        <div class="composer">
+          <input id="commandInput" aria-label="Agent指令" value="把香水瓶替换成磨砂银瓶，从第一次出现到消失都保持同一个商品" />
+          <div class="reference-chips" id="activeReferences"><span class="reference-token">@Nocturne_Bottle</span><span class="reference-token">@Mia</span></div>
+          <div class="composer-row">
+            <div class="composer-tools">
+              <button class="mic-btn" id="micBtn" title="语音输入（演示）">◉</button>
+              <button class="reference-btn" id="referenceBtn" title="引用长期资产">@ 引用</button>
+              <div class="reference-menu" id="referenceMenu">
+                <button class="reference-option" data-reference="@Mia"><b>@Mia</b><span>人物三视图 · 声音绑定 · 身份 DNA</span></button>
+                <button class="reference-option" data-reference="@Nocturne_Bottle"><b>@Nocturne_Bottle</b><span>商品三视图 · Logo · 材质参考</span></button>
+                <button class="reference-option" data-reference="@Paris_Night"><b>@Paris_Night</b><span>场景布局 · 环境光 · 色彩参考</span></button>
+              </div>
+            </div>
+            <button class="primary-btn plan-btn" id="planBtn">生成执行计划</button>
+          </div>
+        </div>
+
+        <div class="plan-card" id="planCard">
+          <div class="context-title"><strong>Agent执行计划</strong><span>待确认</span></div>
+          <div class="plan-step"><span class="step-index">1</span><div><strong>定位主体生命周期</strong><span id="planTarget">香水瓶 B · 04.0s出现 → 15.0s消失</span></div></div>
+          <div class="plan-step"><span class="step-index">2</span><div><strong>计算级联影响</strong><span id="planImpact">商品状态轨、手持关系、镜头03构图</span></div></div>
+          <div class="plan-step"><span class="step-index">3</span><div><strong>约束求解</strong><span id="planLocks">保持Logo、人物身份、背景与音频</span></div></div>
+          <div class="plan-step"><span class="step-index">4</span><div><strong>编译 Video Spec → Editor Commands</strong><span>一个主体事务 · 三个依赖命令 · 原子提交 · 可回滚</span></div></div>
+          <div class="patch-preview" id="patchPreview"><span class="minus">- product_B.appearance.color: violet</span>
+<span class="plus">+ product_B.appearance.color: blue</span>
+  lifetime: 08.0s → 15.0s
+  propagate: held_by(character_A), hero_packshot
+  preserve: logo, character.identity, audio</div>
+          <div class="impact-bar"><span></span></div>
+          <div class="estimate"><span id="impactEstimate">影响：2个镜头 · 3条状态轨</span><span>≈ 26积分 · 58秒</span></div>
+          <button class="primary-btn execute-btn" id="executeBtn">确认级联 Patch 并执行</button>
+        </div>
+        <div class="agent-message" id="agentMessage">
+          <div class="log" data-log="0">追踪主体从出现到消失的完整状态</div>
+          <div class="log" data-log="1">重算关联镜头、关系与构图依赖</div>
+          <div class="log" data-log="2">检查硬锁并编译原子级 Editor Commands</div>
+          <div class="log" data-log="3">局部生成、预览验证并写入本地项目版本</div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="timeline panel">
+      <div class="timeline-head">
+        <div class="transport"><button class="edit-tool" id="prevFrameBtn" title="上一帧">‹</button><button class="play-btn" id="playBtn" aria-label="播放">▶</button><button class="edit-tool" id="nextFrameBtn" title="下一帧">›</button><span class="timecode" id="timecode">00:08.0 / 00:15.0</span><span class="selection-readout">已选择：04.0s—15.0s · 香水瓶 B</span></div>
+        <div class="timeline-tools">
+          <div class="timeline-view" aria-label="时间线视图"><button data-timeline-view="edit">基础剪辑</button><button class="active" data-timeline-view="semantic">语义编排</button></div>
+          <button class="edit-tool" id="splitBtn" title="在播放头切分 S">✂</button>
+          <button class="edit-tool active" id="snapBtn" title="吸附 0.5s">⌁</button>
+          <button class="secondary-btn" id="aiMotionBtn">✦ 大幅轨迹交给 AI</button>
+          <input class="zoom-range" id="timelineZoom" type="range" min="80" max="180" value="100" aria-label="时间线缩放">
+        </div>
+      </div>
+      <div class="timeline-body">
+        <div class="ruler-row">
+          <div class="track-label">时间</div>
+          <div class="track-canvas" id="rulerCanvas">
+            <span class="tick" style="left:0%">0s</span><span class="tick" style="left:20%">3s</span><span class="tick" style="left:40%">6s</span><span class="tick" style="left:60%">9s</span><span class="tick" style="left:80%">12s</span><span class="tick" style="left:99%">15s</span>
+            <div class="selection-range"></div><div class="playhead"></div><div class="timeline-overlay"></div>
+          </div>
+        </div>
+        <div class="track-row" data-track="shots">
+          <div class="track-label"><b>V1</b> 成片 <button class="track-control on" data-track-action="visible" title="显示">◉</button><button class="track-control" data-track-action="lock" title="锁定">▢</button></div>
+          <div class="track-canvas"><div class="segment shot1" data-range="0,4">01 进入夜景</div><div class="segment shot2" data-range="4,10">02 展示商品</div><div class="segment shot3" data-range="10,15">03 Hero Packshot</div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row semantic-track" data-track="character">
+          <div class="track-label"><b>◎</b> 人物 A ▣ <span class="track-hint">进 / 出</span></div>
+          <div class="track-canvas">
+            <div class="semantic-clip" data-entity="character" data-start="0" data-end="10" style="left:0%;width:66.67%"><span class="entry-label">进场 0.0s</span><span class="exit-label">出场 10.0s</span><span class="edge-handle in" data-edge="start"></span><span class="clip-name">行走 → 停下展示</span><svg class="motion-path" viewBox="0 0 100 24" preserveAspectRatio="none"><path d="M2,18 C24,17 38,7 56,9 S78,14 98,7"/><circle cx="2" cy="18" r="1.6"/><circle cx="98" cy="7" r="1.6"/></svg><span class="edge-handle out" data-edge="end"></span></div>
+            <div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div>
+          </div>
+        </div>
+        <div class="track-row semantic-track" data-track="product">
+          <div class="track-label"><b>◇</b> 香水瓶 B ▣ <span class="track-hint">进 / 出</span></div>
+          <div class="track-canvas">
+            <div class="semantic-clip" data-entity="product" data-start="4" data-end="15" style="left:26.67%;width:73.33%"><span class="entry-label">进场 4.0s</span><span class="exit-label">出场 15.0s</span><span class="edge-handle in" data-edge="start"></span><span class="clip-name">人物手中 → Hero Packshot</span><svg class="motion-path" viewBox="0 0 100 24" preserveAspectRatio="none"><path d="M2,17 C22,18 42,15 58,10 S80,4 98,5"/><circle cx="2" cy="17" r="1.6"/><circle cx="98" cy="5" r="1.6"/></svg><span class="edge-handle out" data-edge="end"></span></div>
+            <div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div>
+          </div>
+        </div>
+        <div class="track-row semantic-track" data-track="logo">
+          <div class="track-label"><b>T</b> 品牌文案 ▣ <span class="track-hint">进 / 出</span></div>
+          <div class="track-canvas"><div class="semantic-clip" data-entity="logo" data-start="12" data-end="15" style="left:80%;width:20%"><span class="entry-label">进场 12.0s</span><span class="exit-label">出场 15.0s</span><span class="edge-handle in" data-edge="start"></span><span class="clip-name">NOCTURNE 淡入</span><svg class="motion-path" viewBox="0 0 100 24" preserveAspectRatio="none"><path d="M2,17 C35,16 62,8 98,8"/><circle cx="2" cy="17" r="1.6"/><circle cx="98" cy="8" r="1.6"/></svg><span class="edge-handle out" data-edge="end"></span></div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row semantic-track" data-track="camera">
+          <div class="track-label"><b>⌁</b> 摄影机</div>
+          <div class="track-canvas"><div class="segment camera state-a" data-range="0,4">中景后退</div><div class="segment camera state-b" data-range="4,10">缓慢推近</div><div class="segment camera state-c" data-range="10,15">固定特写</div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row locked-track" data-track="audio">
+          <div class="track-label"><b>A1</b> 音乐 <button class="track-control on" data-track-action="audible" title="静音">♪</button><button class="track-control on" data-track-action="lock" title="锁定">▣</button></div>
+          <div class="track-canvas"><div class="segment audio" data-range="0,15">NOCTURNE · 神秘电子乐　⌁ 第10秒玻璃音效</div><div class="propagation-range"></div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row" data-track="voice">
+          <div class="track-label"><b>A2</b> @Mia VO <button class="track-control on" data-track-action="audible" title="静音">♪</button><button class="track-control" data-track-action="lock" title="锁定">▢</button></div>
+          <div class="track-canvas"><div class="segment voice" data-range="1.2,10">巴黎的夜，藏着一滴未说完的秘密…</div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+        <div class="track-row" data-track="captions">
+          <div class="track-label"><b>T1</b> 字幕 <button class="track-control on" data-track-action="visible" title="显示">◉</button><button class="track-control" data-track-action="lock" title="锁定">▢</button></div>
+          <div class="track-canvas"><div class="segment caption" data-range="1.2,5.4" style="left:8%;width:28%">巴黎的夜</div><div class="segment caption" data-range="5.4,10" style="left:36%;width:30.67%">藏着一滴未说完的秘密</div><div class="selection-range"></div><div class="playhead"></div></div>
+        </div>
+      </div>
+      <div class="transcript">
+        <div class="transcript-label">语义定位</div>
+        <button class="transcript-chip" data-time="1"><b>01.0</b>人物进入巴黎夜景</button>
+        <button class="transcript-chip" data-time="5"><b>05.0</b>拿出香水</button>
+        <button class="transcript-chip active" data-time="8"><b>08.0</b>商品第一次清晰露出</button>
+        <button class="transcript-chip" data-time="10.5"><b>10.5</b>音乐卡点 · 产品特写</button>
+        <button class="transcript-chip" data-time="13"><b>13.0</b>品牌文案出现</button>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast">局部修改已完成，Video Spec 已更新。</div>
+  <div class="modal-backdrop" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+    <div class="export-modal">
+      <div class="modal-head"><div><strong id="exportTitle">导出成片</strong><span>Cassie 验证语义约束 · OpenCut Core 执行确定性渲染</span></div><button class="edit-tool" id="closeExportBtn">×</button></div>
+      <div class="export-grid">
+        <div class="export-option"><label>画面</label><select><option>1080 × 1920 · 9:16</option><option>2160 × 3840 · 9:16</option></select></div>
+        <div class="export-option"><label>帧率</label><select><option>30 fps</option><option>24 fps</option><option>60 fps</option></select></div>
+        <div class="export-option"><label>格式</label><select><option>MP4 · H.264</option><option>WebM · VP9</option><option>MOV · ProRes</option></select></div>
+        <div class="export-option"><label>质量</label><select><option>高 · 18 Mbps</option><option>标准 · 10 Mbps</option><option>社媒 · 6 Mbps</option></select></div>
+      </div>
+      <div class="render-route"><b>本地导出路径</b>　Video Spec 快照 → Timeline commands → Preview validation → FFmpeg render</div>
+      <div class="export-progress" id="exportProgress"><span></span></div>
+      <div class="modal-actions"><button class="ghost-btn" id="cancelExportBtn">取消</button><button class="primary-btn" id="startExportBtn">加入本地渲染队列</button></div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const duration = 15;
+      let currentTime = 8;
+      let selectedObject = 'product';
+      let selectedName = '香水瓶 B';
+      let range = [4, 15];
+      let playing = false;
+      let playStart = 0;
+      let annotationMode = false;
+      let dragStart = null;
+      let timer = null;
+      let snapStep = .5;
+      let saveTimer = null;
+      const undoStack = [];
+      const redoStack = [];
+
+      const $ = (s, root = document) => root.querySelector(s);
+      const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+      const videoFrame = $('#videoFrame');
+      const product = $('.product-object');
+      const character = $('.character-object');
+      const annotationBox = $('#annotationBox');
+      const commandInput = $('#commandInput');
+      const planCard = $('#planCard');
+      const agentMessage = $('#agentMessage');
+      const status = $('#agentStatus');
+
+      function showToast(message, delay = 2200) {
+        $('#toast').textContent = message;
+        $('#toast').classList.add('visible');
+        setTimeout(() => $('#toast').classList.remove('visible'), delay);
+      }
+
+      function updateHistoryButtons() {
+        $('#undoBtn').disabled = undoStack.length === 0;
+        $('#redoBtn').disabled = redoStack.length === 0;
+      }
+
+      function pushCommand(command) {
+        undoStack.push(command);
+        redoStack.length = 0;
+        updateHistoryButtons();
+        scheduleSave();
+      }
+
+      function undo() {
+        const command = undoStack.pop();
+        if (!command) return;
+        command.undo();
+        redoStack.push(command);
+        updateHistoryButtons();
+        scheduleSave();
+        showToast(`已撤销：${command.label}`);
+      }
+
+      function redo() {
+        const command = redoStack.pop();
+        if (!command) return;
+        command.redo();
+        undoStack.push(command);
+        updateHistoryButtons();
+        scheduleSave();
+        showToast(`已重做：${command.label}`);
+      }
+
+      function scheduleSave() {
+        $('#autosaveState').textContent = '● 正在保存…';
+        $('#autosaveState').style.color = 'var(--amber)';
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          const lifecycles = {};
+          $$('.semantic-clip').forEach(clip => { lifecycles[clip.dataset.entity] = [Number(clip.dataset.start), Number(clip.dataset.end)]; });
+          try { localStorage.setItem('cassie.project.nocturne', JSON.stringify({ currentTime, lifecycles, savedAt: Date.now() })); } catch (_) {}
+          $('#autosaveState').textContent = '● 已保存到本地';
+          $('#autosaveState').style.color = 'var(--mint)';
+        }, 520);
+      }
+
+      const subjectSpecs = {
+        product: {
+          lifecycle: [4, 15], label: '香水瓶 B', tracks: ['shots', 'product', 'character', 'camera'],
+          impacts: [
+            ['主状态', '香水瓶 B · 04.0s—15.0s', 'CHANGE', 'change'],
+            ['关系', '人物 A 手持 · 04.0s—10.0s', 'RECHECK', 'guard'],
+            ['构图', '镜头 03 商品特写', 'REFLOW', 'guard'],
+            ['保护', 'Logo、人物身份、音乐', 'LOCK', 'guard']
+          ]
+        },
+        character: {
+          lifecycle: [0, 10], label: '人物 A · Mia', tracks: ['shots', 'character', 'product', 'camera'],
+          impacts: [
+            ['主状态', '人物 A · 00.0s—10.0s', 'CHANGE', 'change'],
+            ['关系', '手持商品 B · 04.0s—10.0s', 'RECHECK', 'guard'],
+            ['构图', '镜头 01—02 人物占位', 'REFLOW', 'guard'],
+            ['保护', '商品、Logo、音乐', 'LOCK', 'guard']
+          ]
+        },
+        logo: {
+          lifecycle: [12, 15], label: '品牌文案', tracks: ['shots', 'logo'],
+          impacts: [
+            ['主状态', '品牌文案 · 12.0s—15.0s', 'CHANGE', 'change'],
+            ['构图', '镜头 03 右下安全区', 'REFLOW', 'guard'],
+            ['保护', '商品、人物、背景', 'LOCK', 'guard']
+          ]
+        },
+        scene: {
+          lifecycle: [0, 15], label: '巴黎夜景', tracks: ['shots', 'character', 'product', 'camera'],
+          impacts: [
+            ['主状态', '巴黎夜景 · 00.0s—15.0s', 'CHANGE', 'change'],
+            ['光照', '人物与商品环境光', 'RECHECK', 'guard'],
+            ['构图', '全部镜头透视与边界', 'REFLOW', 'guard'],
+            ['保护', '人物、商品、Logo、音乐', 'LOCK', 'guard']
+          ]
+        },
+        annotation: {
+          lifecycle: [6, 10], label: '空间标注 #1', tracks: ['shots'],
+          impacts: [['局部区域', '空间标注 · 当前镜头', 'CHANGE', 'change'], ['保护', '标注框外全部像素', 'LOCK', 'guard']]
+        }
+      };
+      const harnessOrder = ['BOUND', 'TRACED', 'IMPACTED', 'GUARDED', 'COMPILED', 'COMMITTED'];
+
+      function getSubjectSpec() {
+        const spec = subjectSpecs[selectedObject] || subjectSpecs.annotation;
+        if (selectedObject === 'annotation') spec.lifecycle = [...range];
+        return spec;
+      }
+
+      function setHarnessStage(stage) {
+        const stageIndex = harnessOrder.indexOf(stage);
+        $$('.harness-node').forEach((node, idx) => {
+          node.classList.toggle('done', stage === 'COMMITTED' ? idx <= stageIndex : idx < stageIndex);
+          node.classList.toggle('active', stage !== 'COMMITTED' && idx === stageIndex);
+        });
+        $('#harnessState').textContent = stage;
+      }
+
+      function updateHarness() {
+        const spec = getSubjectSpec();
+        const [start, end] = spec.lifecycle;
+        $('#lifecycleText').textContent = `${start.toFixed(1)}s — ${end.toFixed(1)}s`;
+        $('#lifecycleReadout').textContent = `出现 ${start.toFixed(1)} → 消失 ${end.toFixed(1)}`;
+        $('#lifecycleSpan').style.left = `${start / duration * 100}%`;
+        $('#lifecycleSpan').style.width = `${(end - start) / duration * 100}%`;
+        $('#impactList').innerHTML = spec.impacts.map(([kind, copy, tag, style], idx) => {
+          const dynamicCopy = idx === 0 ? `${spec.label} · ${start.toFixed(1)}s—${end.toFixed(1)}s` : copy;
+          return `<div class="impact-row"><b>${kind}</b><span>${dynamicCopy}</span><i class="impact-tag ${style}">${tag}</i></div>`;
+        }).join('');
+        $$('.track-row').forEach(row => {
+          const affected = spec.tracks.includes(row.dataset.track);
+          row.classList.toggle('dependency', affected);
+          const propagation = $('.propagation-range', row);
+          if (propagation) {
+            propagation.classList.toggle('visible', affected);
+            propagation.style.left = `${start / duration * 100}%`;
+            propagation.style.width = `${(end - start) / duration * 100}%`;
+          }
+          $$('.segment', row).forEach(segment => {
+            if (!segment.dataset.range) return;
+            const [segStart, segEnd] = segment.dataset.range.split(',').map(Number);
+            segment.classList.toggle('affected', affected && segStart < end && segEnd > start);
+          });
+          $$('.semantic-clip', row).forEach(clip => clip.classList.toggle('affected', clip.dataset.entity === selectedObject));
+        });
+        setHarnessStage('TRACED');
+      }
+
+      function formatTime(seconds) {
+        return `00:${seconds.toFixed(1).padStart(4, '0')}`;
+      }
+
+      function stateFor(object, time) {
+        if (object === 'product') return time < 4 ? 'off_screen' : time < 10 ? 'held_by_character_A' : 'hero_packshot';
+        if (object === 'character') return time < 4 ? 'walking' : time < 10 ? 'presenting_product' : 'off_screen';
+        if (object === 'logo') return time < 12 ? 'hidden' : 'visible';
+        if (object === 'scene') return 'paris_night_locked';
+        return 'annotated_region';
+      }
+
+      function renderAtTime(time) {
+        currentTime = Math.max(0, Math.min(duration, time));
+        const p = (currentTime / duration) * 100;
+        $$('.playhead').forEach(el => el.style.left = `${p}%`);
+        $('#timecode').textContent = `${formatTime(currentTime)} / 00:15.0`;
+        $('#frameTime').textContent = formatTime(currentTime);
+        $('#selectedState').textContent = stateFor(selectedObject, currentTime);
+
+        if (currentTime < 4) {
+          product.style.opacity = '.08'; product.style.left = '56%'; product.style.bottom = '21%'; product.style.transform = 'scale(.72)';
+          character.style.left = '23%'; character.style.transform = 'scale(.92)';
+          $('#shotLabel').textContent = '镜头 01 · 进入夜景';
+        } else if (currentTime < 10) {
+          product.style.opacity = '1'; product.style.left = '53%'; product.style.bottom = '22%'; product.style.transform = 'scale(.9)';
+          character.style.left = '35%'; character.style.transform = 'scale(1)';
+          $('#shotLabel').textContent = '镜头 02 · 展示商品';
+        } else {
+          product.style.opacity = '1'; product.style.left = '64%'; product.style.bottom = '18%'; product.style.transform = 'scale(1.35)';
+          character.style.left = '24%'; character.style.transform = 'scale(.86)';
+          $('#shotLabel').textContent = '镜头 03 · Hero Packshot';
+        }
+      }
+
+      function setRange(start, end) {
+        range = [start, end];
+        const left = (start / duration) * 100;
+        const width = ((end - start) / duration) * 100;
+        $$('.selection-range').forEach(el => { el.style.left = `${left}%`; el.style.width = `${width}%`; });
+        $('#selectedRange').textContent = `${start.toFixed(1)}s — ${end.toFixed(1)}s`;
+        $('.selection-readout').textContent = `已选择：${start.toFixed(1)}s—${end.toFixed(1)}s · ${selectedName}`;
+      }
+
+      function selectObject(object, name) {
+        selectedObject = object;
+        selectedName = name;
+        $$('.canvas-object').forEach(el => el.classList.toggle('selected', el.dataset.object === object));
+        $$('.asset-card, .layer-row').forEach(el => el.classList.toggle('selected', el.dataset.select === object));
+        $('#selectedTarget').textContent = name;
+        $('#selectedState').textContent = stateFor(object, currentTime);
+        $('#contextBadge').textContent = object === 'annotation' ? '空间标注' : '已绑定实体';
+        $('.selection-toolbar').classList.add('visible');
+        planCard.classList.remove('visible');
+        const activeScope = $('.scope-chip.active')?.textContent;
+        if (activeScope === '主体生命周期') {
+          const [start, end] = getSubjectSpec().lifecycle;
+          setRange(start, end);
+        }
+        updateHarness();
+        status.textContent = '主体已绑定';
+      }
+
+      $$('.canvas-object').forEach(el => {
+        el.addEventListener('click', e => {
+          if (annotationMode) return;
+          e.stopPropagation();
+          const names = { product: '香水瓶 B', character: '人物 A · Mia', logo: '品牌文案' };
+          selectObject(el.dataset.object, names[el.dataset.object]);
+        });
+      });
+      $$('[data-select]').forEach(el => el.addEventListener('click', e => {
+        if (e.target.closest('.lock-btn')) return;
+        const object = el.dataset.select;
+        const names = { product: '香水瓶 B', character: '人物 A · Mia', logo: '品牌文案', scene: '巴黎夜景' };
+        selectObject(object, names[object]);
+      }));
+
+      const sidebarLabels = {
+        project: ['Project Context', '剧本与分镜'],
+        media: ['Local Media', '项目媒体与导入'],
+        assets: ['Persistent Library', '长期资产与 @引用'],
+        layers: ['Semantic Graph', '主体、图层与锁']
+      };
+
+      function activateSidebar(tab) {
+        $$('.panel-tabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+        $$('.tab-content').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === tab));
+        $('#sidebarEyebrow').textContent = sidebarLabels[tab][0];
+        $('#sidebarTitle').textContent = sidebarLabels[tab][1];
+      }
+
+      $$('.panel-tabs button').forEach(btn => btn.addEventListener('click', () => activateSidebar(btn.dataset.tab)));
+      $('#addAssetBtn').addEventListener('click', () => {
+        activateSidebar('assets');
+        $('#uploadAssetZone').classList.add('selected');
+      });
+      $('#uploadAssetZone').addEventListener('click', () => {
+        $('#toast').textContent = '资产上传入口：可补充三视图、声音、Logo 与材质参考。';
+        $('#toast').classList.add('visible');
+        setTimeout(() => $('#toast').classList.remove('visible'), 2400);
+      });
+      $('#importMediaZone').addEventListener('click', e => { if (e.target !== $('#mediaInput')) $('#mediaInput').click(); });
+      $('#mediaInput').addEventListener('change', e => {
+        const files = [...e.target.files];
+        files.forEach(file => {
+          const kind = file.type.startsWith('audio/') ? 'AUDIO' : file.type.startsWith('image/') ? 'IMAGE' : 'VIDEO';
+          $('#mediaGrid').insertAdjacentHTML('afterbegin', `<div class="media-item" draggable="true"><div class="media-preview ${kind === 'AUDIO' ? 'audio' : ''}" data-kind="${kind}"></div><strong>${file.name}</strong><small>${(file.size / 1024 / 1024).toFixed(1)} MB · 本地</small></div>`);
+        });
+        $('#mediaCount').textContent = `${$$('#mediaGrid .media-item').length} 项`;
+        if (files.length) { scheduleSave(); showToast(`已导入 ${files.length} 个本地媒体，未上传云端。`); }
+      });
+
+      function addReferenceToken(reference) {
+        const exists = $$('#activeReferences .reference-token').some(token => token.textContent === reference);
+        if (!exists) $('#activeReferences').insertAdjacentHTML('beforeend', `<span class="reference-token">${reference}</span>`);
+        if (!commandInput.value.includes(reference)) commandInput.value = `${reference} ${commandInput.value}`.trim();
+        $('#referenceMenu').classList.remove('visible');
+        status.textContent = `${reference} 已绑定`;
+      }
+
+      $$('[data-reference]').forEach(option => option.addEventListener('click', e => {
+        if (option.closest('#referenceMenu') || option.classList.contains('asset-ref')) {
+          e.stopPropagation();
+          addReferenceToken(option.dataset.reference);
+        }
+      }));
+      $('#referenceBtn').addEventListener('click', e => {
+        e.stopPropagation();
+        $('#referenceMenu').classList.toggle('visible');
+      });
+      document.addEventListener('click', () => $('#referenceMenu').classList.remove('visible'));
+
+      $$('.lock-btn').forEach(btn => btn.addEventListener('click', e => {
+        e.stopPropagation();
+        btn.classList.toggle('locked');
+        btn.textContent = btn.classList.contains('locked') ? '▣' : '□';
+        const lock = btn.dataset.lock;
+        const chip = [...$('#lockList').children].find(x => x.textContent.includes(lock));
+        if (btn.classList.contains('locked') && !chip) $('#lockList').insertAdjacentHTML('beforeend', `<span class="lock-chip">${lock}</span>`);
+        if (!btn.classList.contains('locked') && chip) chip.remove();
+      }));
+
+      $$('.scope-chip').forEach(btn => btn.addEventListener('click', () => {
+        $$('.scope-chip').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        $('#selectedScope').textContent = btn.textContent;
+        if (btn.textContent === '此刻') setRange(Math.max(0, currentTime - .25), Math.min(duration, currentTime + .25));
+        if (btn.textContent === '本镜头') setRange(currentTime < 4 ? 0 : currentTime < 10 ? 4 : 10, currentTime < 4 ? 4 : currentTime < 10 ? 10 : 15);
+        if (btn.textContent === '主体生命周期') setRange(...getSubjectSpec().lifecycle);
+        if (btn.textContent === '从这里开始') setRange(currentTime, duration);
+        if (btn.textContent === '全片') setRange(0, duration);
+        updateHarness();
+      }));
+
+      $('.timeline-body').addEventListener('click', e => {
+        const seg = e.target.closest('.segment[data-range]');
+        if (!seg) return;
+        const [start, end] = seg.dataset.range.split(',').map(Number);
+        setRange(start, end); renderAtTime((start + end) / 2);
+      });
+
+      const referenceByEntity = { character: '@Mia', product: '@Nocturne_Bottle', logo: '@Nocturne_Bottle' };
+      function updateLifecycleClip(clip, start, end) {
+        const entity = clip.dataset.entity;
+        clip.dataset.start = start;
+        clip.dataset.end = end;
+        clip.style.left = `${start / duration * 100}%`;
+        clip.style.width = `${(end - start) / duration * 100}%`;
+        $('.entry-label', clip).textContent = `进场 ${start.toFixed(1)}s`;
+        $('.exit-label', clip).textContent = `出场 ${end.toFixed(1)}s`;
+        subjectSpecs[entity].lifecycle = [start, end];
+        const layerCopy = $(`.asset-card[data-select="${entity}"] .asset-copy span`);
+        if (layerCopy) layerCopy.textContent = `${start.toFixed(1)}s—${end.toFixed(1)}s · ${referenceByEntity[entity] || ''}`;
+        if (selectedObject === entity) {
+          if ($('.scope-chip.active')?.textContent === '主体生命周期') setRange(start, end);
+          updateHarness();
+        }
+      }
+
+      $$('.semantic-clip').forEach(clip => clip.addEventListener('pointerdown', e => {
+        const entity = clip.dataset.entity;
+        const names = { product: '香水瓶 B', character: '人物 A · Mia', logo: '品牌文案' };
+        selectObject(entity, names[entity]);
+        const canvas = clip.parentElement;
+        const rect = canvas.getBoundingClientRect();
+        const originX = e.clientX;
+        const originalStart = Number(clip.dataset.start);
+        const originalEnd = Number(clip.dataset.end);
+        const span = originalEnd - originalStart;
+        const edge = e.target.closest('.edge-handle')?.dataset.edge || 'move';
+        clip.classList.add('dragging');
+        clip.setPointerCapture(e.pointerId);
+
+        const move = ev => {
+          const rawDelta = (ev.clientX - originX) / rect.width * duration;
+          const delta = Math.round(rawDelta / snapStep) * snapStep;
+          let start = originalStart;
+          let end = originalEnd;
+          if (edge === 'start') start = Math.max(0, Math.min(originalEnd - .5, originalStart + delta));
+          if (edge === 'end') end = Math.min(duration, Math.max(originalStart + .5, originalEnd + delta));
+          if (edge === 'move') {
+            start = Math.max(0, Math.min(duration - span, originalStart + delta));
+            end = start + span;
+          }
+          updateLifecycleClip(clip, start, end);
+          status.textContent = edge === 'move' ? '正在移动简单轨迹' : edge === 'start' ? '正在调整进场' : '正在调整出场';
+        };
+        const up = ev => {
+          clip.releasePointerCapture(ev.pointerId);
+          clip.removeEventListener('pointermove', move);
+          clip.removeEventListener('pointerup', up);
+          clip.classList.remove('dragging');
+          const finalStart = Number(clip.dataset.start);
+          const finalEnd = Number(clip.dataset.end);
+          if (finalStart !== originalStart || finalEnd !== originalEnd) {
+            pushCommand({
+              label: `${names[entity]} 生命周期`,
+              undo: () => updateLifecycleClip(clip, originalStart, originalEnd),
+              redo: () => updateLifecycleClip(clip, finalStart, finalEnd)
+            });
+          }
+          setHarnessStage('IMPACTED');
+          status.textContent = '生命周期已重算';
+          showToast(`${names[entity]} 的进出场已更新，关联时间线等待重新编译。`);
+        };
+        clip.addEventListener('pointermove', move);
+        clip.addEventListener('pointerup', up);
+        e.preventDefault();
+      }));
+
+      $('#aiMotionBtn').addEventListener('click', () => {
+        const reference = referenceByEntity[selectedObject] || '';
+        commandInput.value = `${reference} 为${selectedName}重新生成一条大幅运动轨迹，保持其他主体和音乐不变`.trim();
+        planCard.classList.remove('visible');
+        status.textContent = '大幅轨迹指令待编译';
+      });
+
+      $$('.transcript-chip').forEach(chip => chip.addEventListener('click', () => {
+        $$('.transcript-chip').forEach(c => c.classList.remove('active')); chip.classList.add('active');
+        renderAtTime(Number(chip.dataset.time));
+      }));
+
+      function scrub(e) {
+        const canvas = $('#rulerCanvas');
+        const rect = canvas.getBoundingClientRect();
+        renderAtTime(((e.clientX - rect.left) / rect.width) * duration);
+      }
+      $('.timeline-overlay').addEventListener('pointerdown', e => {
+        scrub(e); e.currentTarget.setPointerCapture(e.pointerId);
+        const move = ev => scrub(ev);
+        const up = ev => { e.currentTarget.releasePointerCapture(ev.pointerId); e.currentTarget.removeEventListener('pointermove', move); e.currentTarget.removeEventListener('pointerup', up); };
+        e.currentTarget.addEventListener('pointermove', move); e.currentTarget.addEventListener('pointerup', up);
+      });
+
+      $('#playBtn').addEventListener('click', () => {
+        playing = !playing;
+        $('#playBtn').textContent = playing ? '❚❚' : '▶';
+        if (!playing) { cancelAnimationFrame(timer); return; }
+        playStart = performance.now() - currentTime * 1000;
+        const loop = now => {
+          if (!playing) return;
+          const t = (now - playStart) / 1000;
+          if (t >= duration) { playing = false; $('#playBtn').textContent = '▶'; renderAtTime(0); return; }
+          renderAtTime(t); timer = requestAnimationFrame(loop);
+        };
+        timer = requestAnimationFrame(loop);
+      });
+
+      $('#prevFrameBtn').addEventListener('click', () => renderAtTime(currentTime - 1 / 30));
+      $('#nextFrameBtn').addEventListener('click', () => renderAtTime(currentTime + 1 / 30));
+      $('#undoBtn').addEventListener('click', undo);
+      $('#redoBtn').addEventListener('click', redo);
+
+      $$('[data-timeline-view]').forEach(btn => btn.addEventListener('click', () => {
+        $$('[data-timeline-view]').forEach(item => item.classList.toggle('active', item === btn));
+        document.body.dataset.timelineView = btn.dataset.timelineView;
+        showToast(btn.dataset.timelineView === 'semantic' ? '已显示 Cassie 语义轨与基础剪辑轨。' : '已切换到 OpenCut 风格基础剪辑轨。');
+      }));
+
+      $('#snapBtn').addEventListener('click', e => {
+        e.currentTarget.classList.toggle('active');
+        snapStep = e.currentTarget.classList.contains('active') ? .5 : .1;
+        e.currentTarget.title = e.currentTarget.classList.contains('active') ? '吸附 0.5s' : '吸附已关闭';
+        showToast(e.currentTarget.classList.contains('active') ? '时间线吸附：0.5 秒。按住 Shift 可精细移动。' : '时间线吸附已关闭。');
+      });
+
+      $('#timelineZoom').addEventListener('input', e => {
+        const width = Math.round(720 * Number(e.target.value) / 100);
+        $$('.ruler-row, .track-row').forEach(row => row.style.gridTemplateColumns = `126px ${width}px`);
+      });
+
+      $$('[data-track-action]').forEach(control => control.addEventListener('click', e => {
+        e.stopPropagation();
+        const row = control.closest('.track-row');
+        const action = control.dataset.trackAction;
+        if (action === 'visible') row.classList.toggle('hidden-track');
+        if (action === 'lock') row.classList.toggle('locked-track');
+        if (action === 'audible') row.classList.toggle('muted-track');
+        control.classList.toggle('on');
+        const label = action === 'visible' ? '可见性' : action === 'lock' ? '轨道锁' : '静音';
+        scheduleSave();
+        showToast(`${row.dataset.track} · ${label}已更新。`);
+      }));
+
+      function splitAtPlayhead() {
+        const canvas = $('[data-track="shots"] .track-canvas');
+        const target = $$('.segment[data-range]', canvas).find(seg => {
+          const [start, end] = seg.dataset.range.split(',').map(Number);
+          return currentTime > start + .05 && currentTime < end - .05;
+        });
+        if (!target) { showToast('播放头需要位于一个视频片段内部。'); return; }
+        const [start, end] = target.dataset.range.split(',').map(Number);
+        const before = canvas.innerHTML;
+        const label = target.textContent.trim().replace(/\s· [AB]$/, '');
+        const makeClip = (a, b, suffix) => `<div class="segment split-clip" data-range="${a},${b}" style="left:${a / duration * 100}%;width:${(b - a) / duration * 100}%">${label} · ${suffix}</div>`;
+        target.insertAdjacentHTML('beforebegin', makeClip(start, currentTime, 'A') + makeClip(currentTime, end, 'B'));
+        target.remove();
+        const after = canvas.innerHTML;
+        pushCommand({ label: `在 ${formatTime(currentTime)} 切分片段`, undo: () => { canvas.innerHTML = before; }, redo: () => { canvas.innerHTML = after; } });
+        showToast(`已在 ${formatTime(currentTime)} 切分视频片段，可撤销。`);
+      }
+      $('#splitBtn').addEventListener('click', splitAtPlayhead);
+
+      const exportModal = $('#exportModal');
+      const closeExport = () => exportModal.classList.remove('visible');
+      $('#exportBtn').addEventListener('click', () => exportModal.classList.add('visible'));
+      $('#closeExportBtn').addEventListener('click', closeExport);
+      $('#cancelExportBtn').addEventListener('click', closeExport);
+      exportModal.addEventListener('click', e => { if (e.target === exportModal) closeExport(); });
+      $('#startExportBtn').addEventListener('click', () => {
+        const progress = $('#exportProgress');
+        const bar = $('span', progress);
+        progress.classList.add('visible');
+        $('#startExportBtn').disabled = true;
+        $('#startExportBtn').textContent = '本地渲染中 0%';
+        [18, 46, 72, 100].forEach((value, index) => setTimeout(() => {
+          bar.style.width = `${value}%`;
+          $('#startExportBtn').textContent = value === 100 ? '导出完成' : `本地渲染中 ${value}%`;
+          if (value === 100) {
+            $('#startExportBtn').disabled = false;
+            setTimeout(() => { closeExport(); showToast('NOCTURNE_v03.mp4 已完成本地导出。'); }, 650);
+          }
+        }, 450 + index * 520));
+      });
+
+      document.addEventListener('keydown', e => {
+        const typing = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
+        if (e.code === 'Space' && !typing) { e.preventDefault(); $('#playBtn').click(); }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+        if (e.key.toLowerCase() === 's' && !typing && !e.metaKey && !e.ctrlKey) splitAtPlayhead();
+        if (e.key === 'Shift') snapStep = .1;
+        if (e.key === 'Escape') closeExport();
+      });
+      document.addEventListener('keyup', e => { if (e.key === 'Shift') snapStep = $('#snapBtn').classList.contains('active') ? .5 : .1; });
+
+      $('#annotateTool').addEventListener('click', () => {
+        annotationMode = !annotationMode;
+        $('#annotateTool').classList.toggle('active', annotationMode);
+        $('#selectTool').classList.toggle('active', !annotationMode);
+        videoFrame.style.cursor = annotationMode ? 'crosshair' : 'default';
+      });
+      $('#selectTool').addEventListener('click', () => {
+        annotationMode = false; $('#annotateTool').classList.remove('active'); $('#selectTool').classList.add('active'); videoFrame.style.cursor = 'default';
+      });
+      $('[data-action="annotate"]').addEventListener('click', () => $('#annotateTool').click());
+      $('[data-action="lock"]').addEventListener('click', () => {
+        const relevant = $(`.asset-card[data-select="${selectedObject}"] .lock-btn`);
+        if (relevant) relevant.click();
+      });
+
+      videoFrame.addEventListener('pointerdown', e => {
+        if (!annotationMode) return;
+        const rect = videoFrame.getBoundingClientRect();
+        dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        annotationBox.style.display = 'block';
+        annotationBox.style.left = `${dragStart.x}px`; annotationBox.style.top = `${dragStart.y}px`;
+        annotationBox.style.width = '1px'; annotationBox.style.height = '1px';
+        videoFrame.setPointerCapture(e.pointerId);
+      });
+      videoFrame.addEventListener('pointermove', e => {
+        if (!dragStart) return;
+        const rect = videoFrame.getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        annotationBox.style.left = `${Math.min(x, dragStart.x)}px`; annotationBox.style.top = `${Math.min(y, dragStart.y)}px`;
+        annotationBox.style.width = `${Math.abs(x - dragStart.x)}px`; annotationBox.style.height = `${Math.abs(y - dragStart.y)}px`;
+      });
+      videoFrame.addEventListener('pointerup', e => {
+        if (!dragStart) return;
+        dragStart = null; videoFrame.releasePointerCapture(e.pointerId);
+        selectObject('annotation', '空间标注 #1');
+        $('#selectedState').textContent = 'region_annotation';
+        annotationMode = false; $('#annotateTool').classList.remove('active'); $('#selectTool').classList.add('active'); videoFrame.style.cursor = 'default';
+      });
+
+      function selectScope(label) {
+        $$('.scope-chip').forEach(chip => chip.classList.toggle('active', chip.textContent === label));
+        $('#selectedScope').textContent = label;
+      }
+
+      function compileIntent() {
+        const input = commandInput.value;
+        const spec = getSubjectSpec();
+        let effectiveRange = [...range];
+        let before = `${selectedObject}.appearance: current`;
+        let after = `${selectedObject}.appearance: requested_variant`;
+        let operation = 'update_subject_state';
+
+        if (/第一次出现到消失|同一个商品|生命期|全程/.test(input)) {
+          effectiveRange = [...spec.lifecycle];
+          selectScope('主体生命周期');
+        } else if (/第?8秒|8秒/.test(input)) {
+          effectiveRange = [8, spec.lifecycle[1]];
+          selectScope('从这里开始');
+        }
+        if (/大幅.*轨迹|重新生成.*轨迹/.test(input)) {
+          effectiveRange = [...spec.lifecycle];
+          before = `${selectedObject}.motion_path: simple_manual`;
+          after = `${selectedObject}.motion_path: ai_generated`;
+          operation = 'regenerate_motion_path';
+        } else if (/提前2秒/.test(input)) {
+          effectiveRange = [Math.max(0, spec.lifecycle[0] - 2), spec.lifecycle[1]];
+          before = 'event.product_first_visible: 04.0s';
+          after = 'event.product_first_visible: 02.0s';
+          operation = 'retime_subject_lifecycle';
+        } else if (/蓝/.test(input)) {
+          before = `${selectedObject}.appearance.color: violet`;
+          after = `${selectedObject}.appearance.color: deep_blue`;
+          operation = 'set_subject_property';
+        } else if (/银|替换/.test(input)) {
+          before = `${selectedObject}.appearance.variant: glass_violet`;
+          after = `${selectedObject}.appearance.variant: matte_silver`;
+          operation = 'replace_subject_variant';
+        } else if (/特写/.test(input)) {
+          before = 'camera.framing: medium_close_up';
+          after = 'camera.framing: product_close_up';
+          operation = 'reframe_subject';
+        }
+
+        setRange(...effectiveRange);
+        const propagate = spec.impacts.filter(row => row[2] !== 'LOCK').map(row => row[0]).join(', ');
+        return {
+          operation,
+          effectiveRange,
+          propagate,
+          html: `<span class="minus">- ${before}</span>\n<span class="plus">+ ${after}</span>\n  lifetime: ${effectiveRange[0].toFixed(1)}s → ${effectiveRange[1].toFixed(1)}s\n  references: ${$$('#activeReferences .reference-token').map(x => x.textContent).join(', ') || 'none'}\n  propagate: ${propagate}\n  preserve: ${$$('#lockList .lock-chip').map(x => x.textContent.trim()).join(', ') || 'none'}\n  transaction: atomic · reversible`
+        };
+      }
+
+      $$('.quick-prompts button').forEach(btn => btn.addEventListener('click', () => {
+        commandInput.value = btn.dataset.prompt;
+        planCard.classList.remove('visible');
+        setHarnessStage('TRACED');
+        status.textContent = '指令已更新';
+      }));
+      $('#micBtn').addEventListener('click', () => {
+        $('#micBtn').textContent = '◍'; status.textContent = '正在聆听';
+        setTimeout(() => { $('#micBtn').textContent = '◉'; status.textContent = '已转写'; commandInput.value = '从第8秒开始让商品变成蓝色，但Logo、人物和音乐都不要改变'; }, 900);
+      });
+      $('#planBtn').addEventListener('click', () => {
+        const scope = $('#selectedScope').textContent;
+        const spec = getSubjectSpec();
+        const intent = compileIntent();
+        $('#planTarget').textContent = `${selectedName} · ${spec.lifecycle[0].toFixed(1)}s出现 → ${spec.lifecycle[1].toFixed(1)}s消失 · ${scope}`;
+        $('#planImpact').textContent = `${intent.propagate} · 有效范围 ${intent.effectiveRange[0].toFixed(1)}s—${intent.effectiveRange[1].toFixed(1)}s`;
+        const lockNames = $$('#lockList .lock-chip').map(x => x.textContent.trim()).join('、') || '无硬锁';
+        $('#planLocks').textContent = `保持：${lockNames}；其余属性允许最小变化`;
+        $('#patchPreview').innerHTML = intent.html;
+        $('#impactEstimate').textContent = `影响：${spec.tracks.length}条时间线 · ${spec.impacts.length}组依赖`;
+        planCard.classList.add('visible');
+        status.textContent = '正在编译传播关系';
+        setHarnessStage('IMPACTED');
+        setTimeout(() => setHarnessStage('GUARDED'), 280);
+        setTimeout(() => { setHarnessStage('COMPILED'); status.textContent = '级联 Patch 待确认'; }, 560);
+        planCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+      $('#executeBtn').addEventListener('click', () => {
+        const previousVariant = product.classList.contains('blue') ? 'blue' : product.classList.contains('silver') ? 'silver' : 'default';
+        const nextVariant = /蓝/.test(commandInput.value) ? 'blue' : /银|替换/.test(commandInput.value) ? 'silver' : 'default';
+        const applyVariant = variant => {
+          product.classList.toggle('blue', variant === 'blue');
+          product.classList.toggle('silver', variant === 'silver');
+        };
+        agentMessage.classList.add('visible');
+        status.textContent = '正在执行主体事务';
+        $$('.log').forEach(x => x.classList.remove('done'));
+        [0, 1, 2, 3].forEach((idx) => setTimeout(() => {
+          $(`[data-log="${idx}"]`).classList.add('done');
+          if (idx === 3) {
+            status.textContent = '主体事务已提交';
+            setHarnessStage('COMMITTED');
+            applyVariant(nextVariant);
+            if (previousVariant !== nextVariant) pushCommand({ label: `${selectedName} 语义事务`, undo: () => applyVariant(previousVariant), redo: () => applyVariant(nextVariant) });
+            const variant = /蓝/.test(commandInput.value) ? 'deep_blue' : /银|替换/.test(commandInput.value) ? 'matte_silver' : 'updated';
+            $('#selectedState').textContent = `${stateFor(selectedObject, currentTime)} · ${variant}`;
+            $('#toast').textContent = 'Video Spec 已编译为可撤销命令，并提交到本地项目。';
+            $('#toast').classList.add('visible');
+            setTimeout(() => $('#toast').classList.remove('visible'), 2400);
+          }
+        }, 500 + idx * 700));
+      });
+
+      try {
+        const saved = JSON.parse(localStorage.getItem('cassie.project.nocturne') || 'null');
+        if (saved?.lifecycles) {
+          Object.entries(saved.lifecycles).forEach(([entity, lifecycle]) => {
+            const clip = $(`.semantic-clip[data-entity="${entity}"]`);
+            if (clip && Array.isArray(lifecycle)) updateLifecycleClip(clip, Number(lifecycle[0]), Number(lifecycle[1]));
+          });
+          if (Number.isFinite(saved.currentTime)) currentTime = saved.currentTime;
+        }
+      } catch (_) {}
+      document.body.dataset.timelineView = 'semantic';
+      renderAtTime(currentTime);
+      setRange(range[0], range[1]);
+      updateHarness();
+    })();
+  </script>
+</body>
+</html>
