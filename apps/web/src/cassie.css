@@ -148,6 +148,11 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: var(--surface-2);
   margin: 0 14px 12px;
 }
+.context-card:has(.lock-chip, .reference-token) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 
 .lock-chip {
   font-family: var(--mono);
@@ -430,24 +435,40 @@ button:disabled { opacity: 0.4; cursor: default; }
   flex: 1;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: 10px;
   min-height: 0;
   background:
     radial-gradient(900px 500px at 50% 20%, rgba(140, 114, 255, 0.06), transparent 65%),
     var(--bg);
 }
-.video-wrap { position: relative; height: 100%; max-width: 100%; display: grid; place-items: center; }
+.video-wrap {
+  position: relative;
+  height: 100%;
+  max-width: 100%;
+  display: grid;
+  place-items: center;
+}
+/* 环绕氛围光：抵消竖屏视频两侧的空旷感 */
+.video-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 6% 12%;
+  background: radial-gradient(ellipse at center, rgba(140, 114, 255, 0.1), transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+}
 
 .video-frame {
   position: relative;
   aspect-ratio: 9 / 16;
   height: 100%;
   max-height: 100%;
+  max-width: 100%;
   border-radius: 12px;
   overflow: hidden;
   background: #000;
   border: 1px solid var(--line-strong);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55), 0 0 120px rgba(140, 114, 255, 0.14);
   container-type: size;
 }
 .stage-video {
@@ -591,8 +612,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .harness-flow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 .harness-node {
   border: 1px solid var(--line);

@@ -1,4 +1,5 @@
-import { bootDemo, useAppState } from "./store";
+import { useEffect } from "react";
+import { bootDemo, redo, undo, useAppState } from "./store";
 import { Topbar } from "./components/Topbar";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
@@ -7,6 +8,22 @@ import { Timeline } from "./components/Timeline";
 
 export function App() {
   const state = useAppState();
+
+  // ⌘Z / ⇧⌘Z 全局撤销重做
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // ?demo=1：自动载入演示项目（无头验证 / 演示链接用）
   if (!state.booted && !state.bootProgress && new URLSearchParams(location.search).get("demo") === "1") {

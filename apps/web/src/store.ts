@@ -47,6 +47,9 @@ const listeners = new Set<() => void>();
 let version = 0;
 let rafId: number | null = null;
 let lastTick = 0;
+/** useSyncExternalStore 需要快照引用变化才重渲染：
+ *  每次 emit 版本号 +1，版本变化后的首次读取生成新浅拷贝；无 emit 时引用稳定（防循环渲染） */
+let snapshotCache: { data: AppState; version: number } | null = null;
 
 function emit() {
   version++;
@@ -57,18 +60,27 @@ export function getState(): AppState {
   return state;
 }
 
+function getSnapshot(): AppState {
+  if (snapshotCache === null || snapshotCache.version !== version) {
+    snapshotCache = { data: { ...state }, version };
+  }
+  return snapshotCache.data;
+}
+
 export function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
 
 export function useAppState(): AppState {
-  return useSyncExternalStore(subscribe, getState);
+  return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 // ---------- 初始化 ----------
 
 export function initStore(): void {
+  // 调试 / E2E 钩子（生产可移除）
+  (globalThis as Record<string, unknown>).__cassie = { getState, compileIntent };
   const adapter = new LocalAdapter(createProject({ name: "NOCTURNE · Director Cut" }));
   const semantic = emptySemantic(adapter.getProject().id);
   const harness = new Harness(adapter, semantic);
@@ -87,11 +99,21 @@ export function initStore(): void {
     bootProgress: null,
   };
   adapter.subscribe(() => emit());
-  const autoSave = localStorage.getItem("cassie:autosave");
-  if (autoSave) {
+
+  // 恢复自动保存：项目 + 语义层一起持久化（语义绑定依赖项目稳定 ID）
+  const raw = localStorage.getItem("cassie:autosave");
+  if (raw) {
     try {
-      adapter.load(autoSave);
-      state.booted = true;
+      const data = JSON.parse(raw) as { project: string; semantic: SemanticProject };
+      adapter.load(data.project);
+      adapter.rehydrate((id) =>
+        id.startsWith("demo_") ? `/demo/${adapter.getProject().assets[id]?.name}` : undefined,
+      );
+      if (data.semantic && Object.keys(data.semantic.entities).length > 0) {
+        state.semantic = data.semantic;
+        state.harness.setSemantic(state.semantic);
+        state.booted = true;
+      }
     } catch {
       localStorage.removeItem("cassie:autosave");
     }
@@ -171,40 +193,29 @@ export function redo(): void {
 export async function bootDemo(): Promise<void> {
   state.bootProgress = "正在生成演示项目…";
   emit();
-  const { adapter } = state;
-  const assets: MediaAsset[] = [];
-  const probe = (url: string, kind: MediaAsset["kind"], name: string): Promise<MediaAsset> =>
-    new Promise((resolve, reject) => {
-      if (kind === "audio") {
-        const a = new Audio();
-        a.src = url;
-        a.onloadedmetadata = () => resolve({ id: `demo_${name.split(".")[0]}`, kind, name, durationUs: Math.round(a.duration * 1e6), url });
-        a.onerror = reject;
-        return;
-      }
-      const v = document.createElement("video");
-      v.preload = "metadata";
-      v.src = url;
-      v.onloadedmetadata = () =>
-        resolve({
-          id: `demo_${name.split(".")[0]}`,
-          kind,
-          name,
-          durationUs: Math.round(v.duration * 1e6),
-          width: v.videoWidth,
-          height: v.videoHeight,
-          url,
-        });
-      v.onerror = reject;
-    });
+  try {
+    await bootDemoInner();
+  } catch (err) {
+    state.bootProgress = null;
+    emit();
+    setToast(`演示项目载入失败：${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
-  const [night, mia, bottle, music] = await Promise.all([
-    probe("/demo/night.mp4", "video", "night.mp4"),
-    probe("/demo/mia.mp4", "video", "mia.mp4"),
-    probe("/demo/bottle.mp4", "video", "bottle.mp4"),
-    probe("/demo/music.mp3", "audio", "music.mp3"),
-  ]);
-  assets.push(night, mia, bottle, music);
+async function bootDemoInner(): Promise<void> {
+  const { adapter } = state;
+  // 演示素材时长已知（由 scripts/gen-demo-media.sh 生成），
+  // 不依赖 media metadata 事件：加载即时完成，headless 环境同样可用。
+  const assets: MediaAsset[] = [
+    { id: "demo_night", kind: "video", name: "night.mp4", durationUs: 15_000_000, url: "/demo/night.mp4" },
+    { id: "demo_mia", kind: "video", name: "mia.mp4", durationUs: 12_000_000, url: "/demo/mia.mp4" },
+    { id: "demo_bottle", kind: "video", name: "bottle.mp4", durationUs: 15_000_000, url: "/demo/bottle.mp4" },
+    { id: "demo_music", kind: "audio", name: "music.mp3", durationUs: 15_000_000, url: "/demo/music.mp3" },
+  ];
+  const night = assets[0]!;
+  const mia = assets[1]!;
+  const bottle = assets[2]!;
+  const music = assets[3]!;
 
   const videoTrack = adapter.getProject().tracks.find((t) => t.kind === "video")!;
   const textTrack = adapter.getProject().tracks.find((t) => t.kind === "text")!;
@@ -434,7 +445,10 @@ export function loadFromFile(file: File): void {
 
 export function autosave(): void {
   try {
-    localStorage.setItem("cassie:autosave", state.adapter.save());
+    localStorage.setItem(
+      "cassie:autosave",
+      JSON.stringify({ project: state.adapter.save(), semantic: state.semantic }),
+    );
   } catch {
     // localStorage 满时静默降级
   }
