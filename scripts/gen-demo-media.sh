@@ -28,10 +28,10 @@ drawbox=x='iw*0.28+iw*0.34*min(t/6,1)+42':y='ih*0.30+250':w=20:h=190:color=#0b0d
 drawbox=x='iw*0.28+iw*0.34*min(t/6,1)-30':y='ih*0.30+52':w=60:h=110:color=#ffd9a0@0.18:t=fill" \
   -c:v libx264 -preset veryfast -crf 26 -pix_fmt yuv420p "$OUT/mia.mp4" -loglevel error
 
-# 3. 香水瓶：紫玻璃瓶身 + NOCTURNE 标签 + 光晕（全部 PNG 叠加，无逐帧 geq）
+# 3. 香水瓶：紫玻璃瓶身 + NOCTURNE 标签 + 光晕（PNG 叠加，shortest=1 防 EOF 死锁）
 python3 "$(dirname "$0")/gen-label.py"
 python3 "$(dirname "$0")/gen-glow.py"
-ffmpeg -y -f lavfi -i "color=c=#0d0a16:s=1080x1920:r=${FPS}:d=15" -loop 1 -i "$OUT/glow.png" -loop 1 -i "$OUT/label.png" \
+ffmpeg -y -f lavfi -i "color=c=#0d0a16:s=1080x1920:r=${FPS}:d=15" -loop 1 -t 15 -i "$OUT/glow.png" -loop 1 -t 15 -i "$OUT/label.png" \
   -filter_complex "[0:v]
 drawbox=x='iw*0.5-26':y='ih*0.24':w=52:h=46:color=#d8c6ff:t=fill,
 drawbox=x='iw*0.5-24':y='ih*0.29':w=48:h=14:color=#2a1f4d:t=fill,
@@ -40,9 +40,9 @@ drawbox=x='iw*0.5-190':y='ih*0.31':w=380:h=760:color=#e8dcff@0.16:t=fill,
 drawbox=x='iw*0.5-160':y='ih*0.72':w=320:h=250:color=#f5f0ff@0.96:t=fill,
 drawbox=x='iw*0.5-160':y='ih*0.98':w=320:h=90:color=#0d0a16:t=fill[base];
 [1:v]format=rgba[glow];
-[base][glow]overlay=0:0[b1];
+[base][glow]overlay=0:0:shortest=1[b1];
 [2:v]scale=560:440,format=rgba[label];
-[b1][label]overlay=x=(W-w)/2:y=main_h*0.68" \
+[b1][label]overlay=x=(W-w)/2:y=main_h*0.68:shortest=1" \
   -c:v libx264 -preset veryfast -crf 26 -pix_fmt yuv420p "$OUT/bottle.mp4" -loglevel error
 
 # 4. 配乐：双正弦 + 慢颤音，深夜电子氛围
