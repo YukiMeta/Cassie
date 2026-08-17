@@ -281,7 +281,56 @@ try {
   await evalJS(`[...document.querySelectorAll(".settings-modal .modal-actions button")].find(b => b.textContent.includes("保存")).click()`);
   await sleep(400);
 
-  console.log(failures === 0 ? "\nE2E 垂直切片 + 交互排查 + 模型 BYOK 全部通过 ✅" : `\n${failures} 项失败 ❌`);
+  // ---------- 分区布局 ----------
+
+  const layoutState = async () => await evalJS(`window.__cassie.getState().layout`);
+
+  // 16. 分区重排：时间轴 grip → 拖到左侧槽 → 交换
+  const tlGrip = await rectOf(".timeline-head .panel-grip");
+  const leftSlot = await rectOf(".slot");
+  const layoutBefore = await layoutState();
+  await dragMouse(
+    { x: tlGrip.x + tlGrip.w / 2, y: tlGrip.y + tlGrip.h / 2 },
+    { x: leftSlot.x + leftSlot.w / 2, y: leftSlot.y + leftSlot.h / 2 },
+    10,
+  );
+  const layoutSwapped = await layoutState();
+  assert(
+    layoutSwapped.slots.left === "timeline" && layoutSwapped.slots.bottom === "script",
+    `分区拖拽重排：时间轴 ↔ 剧本（${layoutBefore.slots.left} → ${layoutSwapped.slots.left}）`,
+  );
+  // 换回：剧本面板 grip（现在在底部槽）→ 拖回左侧槽
+  const scriptGrip = await rectOf(".sidebar-head .panel-grip");
+  await dragMouse(
+    { x: scriptGrip.x + scriptGrip.w / 2, y: scriptGrip.y + scriptGrip.h / 2 },
+    { x: leftSlot.x + leftSlot.w / 2, y: leftSlot.y + leftSlot.h / 2 },
+    10,
+  );
+  const layoutRestored = await layoutState();
+  assert(
+    layoutRestored.slots.left === "script" && layoutRestored.slots.bottom === "timeline",
+    "分区换回：剧本 ← 时间轴",
+  );
+
+  // 17. 底部时间轴高度拖拽（上拉 +60px）
+  const hBefore = (await layoutState()).sizes.bottomH;
+  const hDiv = await rectOf(".panel-divider.bottom");
+  await dragMouse(
+    { x: hDiv.x + hDiv.w / 2, y: hDiv.y + 4 },
+    { x: hDiv.x + hDiv.w / 2, y: hDiv.y - 60 },
+    6,
+  );
+  const hAfter = (await layoutState()).sizes.bottomH;
+  assert(Math.abs(hAfter - hBefore - 64) < 2, `底部高度拖拽：${hBefore}px → ${hAfter}px`);
+  // 拖回
+  await dragMouse(
+    { x: hDiv.x + hDiv.w / 2, y: hDiv.y - 56 },
+    { x: hDiv.x + hDiv.w / 2, y: hDiv.y + 4 },
+    6,
+  );
+  await sleep(300);
+
+  console.log(failures === 0 ? "\nE2E 垂直切片 + 交互排查 + 模型 BYOK + 分区布局 全部通过 ✅" : `\n${failures} 项失败 ❌`);
 } finally {
   ws.close();
   chrome.kill();

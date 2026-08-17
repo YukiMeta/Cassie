@@ -9,6 +9,7 @@ import {
   useAppState,
 } from "../store";
 import type { EditTransaction, Scope } from "@cassie/harness";
+import { PanelGrip } from "./PanelGrip";
 
 const HARNESS_FLOW = ["BOUND", "TRACED", "IMPACTED", "GUARDED", "PLANNED", "VALIDATING", "COMMITTED"];
 
@@ -61,9 +62,12 @@ export function AgentPanel() {
   return (
     <aside className="agent-panel panel">
       <div className="agent-head">
-        <div>
-          <span className="eyebrow">Subject Harness</span>
-          <strong>语义修改编译器</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <PanelGrip panel="agent" />
+          <div>
+            <span className="eyebrow">Subject Harness</span>
+            <strong>语义修改编译器</strong>
+          </div>
         </div>
         <span className="agent-status">{transactionLabel(tx)}</span>
       </div>

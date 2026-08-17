@@ -431,18 +431,39 @@ img.brand-mark {
   height: calc(100% - 52px);
   display: grid;
   grid-template-columns: 264px 12px minmax(0, 1fr) 12px 336px;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) 10px 208px;
   grid-template-areas:
-    "sidebar d1 stage d2 agent"
-    "timeline timeline timeline timeline timeline";
+    "left d1 center d2 right"
+    "hdiv hdiv hdiv hdiv hdiv"
+    "bottom bottom bottom bottom bottom";
   gap: 10px 0;
   padding: 10px;
 }
-.sidebar { margin-right: 10px; }
-.stage-panel { margin: 0 10px; }
-.agent-panel { margin-left: 10px; }
+.slot { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.slot > * { flex: 1; min-height: 0; }
+.slot.drop-target { outline: 2px dashed rgba(140, 114, 255, 0.7); outline-offset: -2px; border-radius: var(--radius); }
+.slot.drag-source > * { opacity: 0.45; pointer-events: none; }
+body.panel-dragging { cursor: grabbing; user-select: none; }
 
-/* 面板分隔条：网格列占位，拖动调整左右栏宽度 */
+/* 面板角标 grip：拖动交换分区 */
+.panel-grip {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--dim);
+  font-size: 10px;
+  cursor: grab;
+  flex: none;
+  opacity: 0.45;
+  transition: opacity 0.15s, color 0.15s;
+  touch-action: none;
+  user-select: none;
+}
+.panel-grip:hover { opacity: 1; color: var(--purple); background: rgba(140, 114, 255, 0.12); }
+
+/* 面板分隔条：拖动调整宽度/高度 */
 .panel-divider {
   cursor: col-resize;
   z-index: 20;
@@ -452,6 +473,11 @@ img.brand-mark {
 }
 .panel-divider.left { grid-area: d1; }
 .panel-divider.right { grid-area: d2; }
+.panel-divider.bottom {
+  grid-area: hdiv;
+  cursor: row-resize;
+  place-items: start center;
+}
 .panel-divider::after {
   content: "";
   width: 3px;
@@ -459,6 +485,11 @@ img.brand-mark {
   border-radius: 2px;
   background: transparent;
   transition: background 0.15s;
+}
+.panel-divider.bottom::after {
+  width: 96px;
+  height: 3px;
+  margin-top: 3px;
 }
 .panel-divider:hover::after,
 .panel-divider:active::after {

@@ -55,11 +55,24 @@ export interface AppState {
   parseMode: "llm" | "deterministic";
   /** LLM 解析进行中（UI 用） */
   parsing: boolean;
+  /** 分区布局：面板 ↔ 槽位 映射 + 尺寸（可拖拽重排、双向调尺寸，持久化） */
+  layout: LayoutState;
 }
 
 export interface ModelConfigState {
   llm: LlmConfig;
   vision: VisionConfig;
+}
+
+/** 四个分区面板 */
+export type PanelId = "script" | "stage" | "agent" | "timeline";
+export type SlotId = "left" | "center" | "right" | "bottom";
+
+export interface LayoutState {
+  /** 槽位 → 面板分配 */
+  slots: Record<SlotId, PanelId>;
+  /** 左/右槽宽（px）与底部槽高（px） */
+  sizes: { leftW: number; rightW: number; bottomH: number };
 }
 
 let state: AppState;
@@ -124,6 +137,7 @@ export function initStore(): void {
     settingsOpen: false,
     parseMode: "llm",
     parsing: false,
+    layout: loadLayout(),
   };
   adapter.subscribe(() => emit());
 
@@ -289,6 +303,53 @@ export function saveModelConfig(config: ModelConfigState): void {
 export function setSettingsOpen(open: boolean): void {
   state.settingsOpen = open;
   emit();
+}
+
+// ---------- 分区布局 ----------
+
+const LAYOUT_KEY = "cassie:layout";
+
+export function loadLayout(): LayoutState {
+  const defaults: LayoutState = {
+    slots: { left: "script", center: "stage", right: "agent", bottom: "timeline" },
+    sizes: { leftW: 264, rightW: 336, bottomH: 208 },
+  };
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<LayoutState>;
+      return {
+        slots: { ...defaults.slots, ...(parsed.slots ?? {}) },
+        sizes: { ...defaults.sizes, ...(parsed.sizes ?? {}) },
+      };
+    }
+  } catch {
+    // 损坏时用默认
+  }
+  return defaults;
+}
+
+export function saveLayout(layout: LayoutState): void {
+  state.layout = layout;
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  } catch {
+    // localStorage 满时静默降级
+  }
+  emit();
+}
+
+/** 交换两个槽位的面板 */
+export function swapSlots(a: SlotId, b: SlotId): void {
+  const slots = { ...state.layout.slots };
+  const tmp = slots[a];
+  slots[a] = slots[b];
+  slots[b] = tmp;
+  saveLayout({ ...state.layout, slots });
+}
+
+export function setSlotSize(patch: Partial<LayoutState["sizes"]>): void {
+  saveLayout({ ...state.layout, sizes: { ...state.layout.sizes, ...patch } });
 }
 
 export function stageZoomIn(): void {

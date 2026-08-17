@@ -12,6 +12,7 @@ import {
   toggleSnap,
   useAppState,
 } from "../store";
+import { PanelGrip } from "./PanelGrip";
 
 /**
  * 舞台：真实视频预览（video element 按播放头 seek）+ 文字叠加层 + 外观滤镜。
@@ -80,6 +81,7 @@ export function Stage() {
     <section className="stage-panel">
       <div className="stage-toolbar">
         <div className="tool-group">
+          <PanelGrip panel="stage" />
           <button
             className="tool-btn active"
             title="选择工具（点击片段可选中）"

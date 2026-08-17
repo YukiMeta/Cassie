@@ -10,6 +10,7 @@ import {
   toggleSnap,
   useAppState,
 } from "../store";
+import { PanelGrip } from "./PanelGrip";
 
 const TRANSCRIPT = [
   { time: 1.0, label: "人物进入巴黎夜景" },
@@ -127,6 +128,7 @@ export function Timeline() {
     <section className="timeline panel">
       <div className="timeline-head">
         <div className="transport">
+          <PanelGrip panel="timeline" />
           <button className="play-btn" onClick={togglePlay}>
             {state.playing ? "❚❚" : "▶"}
           </button>

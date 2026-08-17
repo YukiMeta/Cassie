@@ -1,18 +1,38 @@
-import { useEffect, useState } from "react";
-import { bootDemo, redo, togglePlay, undo, useAppState } from "./store";
+import { useEffect, useRef, useState, type JSX } from "react";
+import {
+  bootDemo,
+  redo,
+  setSlotSize,
+  swapSlots,
+  togglePlay,
+  undo,
+  useAppState,
+  type PanelId,
+  type SlotId,
+} from "./store";
 import { Topbar } from "./components/Topbar";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { AgentPanel } from "./components/AgentPanel";
 import { Timeline } from "./components/Timeline";
 import { SettingsModal } from "./components/SettingsModal";
+import { LayoutContext } from "./components/PanelGrip";
 
-/** 面板宽度（px），可拖拽分隔条调整 */
-const PANEL_LIMITS = { sidebar: { min: 200, max: 430 }, agent: { min: 260, max: 560 } };
+const SLOT_ORDER: SlotId[] = ["left", "center", "right", "bottom"];
+const SIZE_LIMITS = { leftW: { min: 200, max: 430 }, rightW: { min: 260, max: 560 }, bottomH: { min: 120, max: 480 } };
+
+const PANEL_COMPONENTS: Record<PanelId, () => JSX.Element> = {
+  script: Sidebar,
+  stage: Stage,
+  agent: AgentPanel,
+  timeline: Timeline,
+};
 
 export function App() {
   const state = useAppState();
-  const [panels, setPanels] = useState({ sidebar: 264, agent: 336 });
+  const slotEls = useRef<Partial<Record<SlotId, HTMLDivElement | null>>>({});
+  const dragRef = useRef<{ panel: PanelId; from: SlotId } | null>(null);
+  const [dragTarget, setDragTarget] = useState<SlotId | null>(null);
 
   // ⌘Z / ⇧⌘Z 全局撤销重做；空格 播放/暂停
   useEffect(() => {
@@ -35,18 +55,48 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 拖拽分隔条：pointerdown 时挂全局监听，实时调整面板宽度
-  const startResize = (kind: "sidebar" | "agent") => (e: React.PointerEvent) => {
+  const hitSlot = (x: number, y: number): SlotId | null => {
+    for (const slot of SLOT_ORDER) {
+      const el = slotEls.current[slot];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return slot;
+    }
+    return null;
+  };
+
+  /** 分区拖拽重排：抓住 ⣿ 拖动 → 悬停目标槽位高亮 → 松开交换 */
+  const startPanelDrag = (e: React.PointerEvent, panel: PanelId) => {
+    e.preventDefault();
+    const from = (Object.entries(state.layout.slots).find(([, p]) => p === panel)?.[0] ?? "left") as SlotId;
+    dragRef.current = { panel, from };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.classList.add("panel-dragging");
+    const onMove = (ev: PointerEvent) => setDragTarget(hitSlot(ev.clientX, ev.clientY));
+    const onUp = (ev: PointerEvent) => {
+      const target = hitSlot(ev.clientX, ev.clientY);
+      if (target && target !== from) swapSlots(from, target);
+      dragRef.current = null;
+      setDragTarget(null);
+      document.body.classList.remove("panel-dragging");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  /** 分隔条拖拽：左/右槽宽与底部槽高 */
+  const startResize = (kind: keyof typeof SIZE_LIMITS) => (e: React.PointerEvent) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startW = panels[kind];
-    const limits = PANEL_LIMITS[kind];
+    const startY = e.clientY;
+    const startSize = state.layout.sizes[kind];
+    const limits = SIZE_LIMITS[kind];
     const onMove = (ev: PointerEvent) => {
-      const delta = ev.clientX - startX;
-      // sidebar 向右拖 = 变宽；agent 向左拖 = 变宽
-      const next = kind === "sidebar" ? startW + delta : startW - delta;
-      const clamped = Math.max(limits.min, Math.min(limits.max, next));
-      setPanels((p) => (kind === "sidebar" ? { ...p, sidebar: clamped } : { ...p, agent: clamped }));
+      const delta = kind === "rightW" ? startX - ev.clientX : kind === "leftW" ? ev.clientX - startX : startY - ev.clientY;
+      const next = Math.max(limits.min, Math.min(limits.max, startSize + delta));
+      setSlotSize({ [kind]: next });
     };
     const onUp = () => {
       document.body.classList.remove("resizing");
@@ -85,22 +135,60 @@ export function App() {
     );
   }
 
+  const { slots, sizes } = state.layout;
+  const renderPanel = (panel: PanelId) => {
+    const Comp = PANEL_COMPONENTS[panel];
+    return <Comp key={panel} />;
+  };
+
   return (
-    <>
+    <LayoutContext.Provider value={{ startPanelDrag }}>
       <Topbar />
       <main
         className="app"
-        style={{ gridTemplateColumns: `${panels.sidebar}px 12px minmax(0, 1fr) 12px ${panels.agent}px` }}
+        style={{
+          gridTemplateColumns: `${sizes.leftW}px 12px minmax(0, 1fr) 12px ${sizes.rightW}px`,
+          gridTemplateRows: `minmax(0, 1fr) 10px ${sizes.bottomH}px`,
+        }}
       >
-        <Sidebar />
-        <div className="panel-divider left" onPointerDown={startResize("sidebar")} title="拖动调整左侧栏宽度" />
-        <Stage />
-        <div className="panel-divider right" onPointerDown={startResize("agent")} title="拖动调整 Agent 面板宽度" />
-        <AgentPanel />
-        <Timeline />
+        <div
+          className={`slot ${dragTarget === "left" ? "drop-target" : ""} ${dragRef.current?.from === "left" ? "drag-source" : ""}`}
+          ref={(el) => {
+            slotEls.current.left = el;
+          }}
+        >
+          {renderPanel(slots.left)}
+        </div>
+        <div className="panel-divider left" onPointerDown={startResize("leftW")} title="拖动调整宽度" />
+        <div
+          className={`slot ${dragTarget === "center" ? "drop-target" : ""} ${dragRef.current?.from === "center" ? "drag-source" : ""}`}
+          ref={(el) => {
+            slotEls.current.center = el;
+          }}
+        >
+          {renderPanel(slots.center)}
+        </div>
+        <div className="panel-divider right" onPointerDown={startResize("rightW")} title="拖动调整宽度" />
+        <div
+          className={`slot ${dragTarget === "right" ? "drop-target" : ""} ${dragRef.current?.from === "right" ? "drag-source" : ""}`}
+          ref={(el) => {
+            slotEls.current.right = el;
+          }}
+        >
+          {renderPanel(slots.right)}
+        </div>
+        <div className="panel-divider bottom" onPointerDown={startResize("bottomH")} title="拖动调整高度" />
+        <div
+          className={`slot ${dragTarget === "bottom" ? "drop-target" : ""} ${dragRef.current?.from === "bottom" ? "drag-source" : ""}`}
+          ref={(el) => {
+            slotEls.current.bottom = el;
+          }}
+        >
+          {renderPanel(slots.bottom)}
+        </div>
       </main>
       {state.toast && <div className="toast visible">{state.toast}</div>}
       {state.settingsOpen && <SettingsModal />}
-    </>
+    </LayoutContext.Provider>
   );
 }

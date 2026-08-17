@@ -14,6 +14,7 @@ import {
   useAppState,
 } from "../store";
 import { visionExtract, type ExtractedCandidate } from "../lib/model-client";
+import { PanelGrip } from "./PanelGrip";
 
 const TAB_LABELS: Record<string, [string, string]> = {
   project: ["Project Context", "剧本与分镜"],
@@ -42,9 +43,12 @@ export function Sidebar() {
         ))}
       </div>
       <div className="sidebar-head">
-        <div>
-          <span className="eyebrow">{TAB_LABELS[tab]![0]}</span>
-          <strong>{TAB_LABELS[tab]![1]}</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <PanelGrip panel="script" />
+          <div>
+            <span className="eyebrow">{TAB_LABELS[tab]![0]}</span>
+            <strong>{TAB_LABELS[tab]![1]}</strong>
+          </div>
         </div>
         <label className="icon-btn" title="导入媒体">
           ＋
