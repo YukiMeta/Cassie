@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { appearanceToCssFilter, deleteSelectedClip, selectClip, splitAtPlayhead, useAppState } from "../store";
+import {
+  appearanceToCssFilter,
+  deleteSelectedClip,
+  selectClip,
+  setStageZoom,
+  splitAtPlayhead,
+  stageZoomFit,
+  stageZoomIn,
+  stageZoomOut,
+  toggleSafeFrame,
+  toggleSnap,
+  useAppState,
+} from "../store";
 
 /**
  * 舞台：真实视频预览（video element 按播放头 seek）+ 文字叠加层 + 外观滤镜。
- * 顶部视频轨道 clip 是当前可见画面；appearance 属性实时映射为 CSS 滤镜。
+ * 支持缩放（按钮 + 滚轮）、安全框开关、吸附开关。
  */
 export function Stage() {
   const state = useAppState();
@@ -68,26 +80,54 @@ export function Stage() {
     <section className="stage-panel">
       <div className="stage-toolbar">
         <div className="tool-group">
-          <button className="tool-btn active" title="选择">
+          <button
+            className="tool-btn active"
+            title="选择工具（点击片段可选中）"
+            onClick={() => selectClip(null)}
+          >
             ↖ 选择
           </button>
-          <button className="tool-btn" title="在时间线中操作">
+          <button
+            className={`tool-btn ${state.snapEnabled ? "active" : ""}`}
+            title="时间线吸附 0.5s"
+            onClick={toggleSnap}
+          >
             ⌁ 吸附 0.5s
           </button>
-          <button className="tool-btn" title="删除所选片段" onClick={deleteSelectedClip}>
-            ⌫ 删除
+          <button
+            className={`tool-btn ${state.safeFrame ? "active" : ""}`}
+            title="显示/隐藏安全框"
+            onClick={toggleSafeFrame}
+          >
+            ⌗ 安全框
           </button>
           <button className="tool-btn" title="在播放头切分所选片段" onClick={splitAtPlayhead}>
             ✂ 切分
           </button>
+          <button className="tool-btn" title="删除所选片段" onClick={deleteSelectedClip}>
+            ⌫ 删除
+          </button>
         </div>
         <div className="tool-group">
-          <span className="zoom">适应画布 · 9:16</span>
-          <button className="tool-btn">⌗ 安全框</button>
+          <button className="tool-btn" title="缩小预览" onClick={stageZoomOut}>
+            −
+          </button>
+          <button className="zoom" title="恢复适应画布" onClick={stageZoomFit}>
+            {Math.round(state.stageZoom * 100)}% · 适应
+          </button>
+          <button className="tool-btn" title="放大预览" onClick={stageZoomIn}>
+            ＋
+          </button>
         </div>
       </div>
-      <div className="stage-workspace">
-        <div className="video-wrap">
+      <div
+        className="stage-workspace"
+        onWheel={(e) => {
+          // 滚轮缩放预览
+          setStageZoom(state.stageZoom + (e.deltaY < 0 ? 0.1 : -0.1));
+        }}
+      >
+        <div className="video-wrap" style={{ transform: `scale(${state.stageZoom})` }}>
           {selectedClip && (
             <div className="selection-toolbar visible">
               <span className="selection-name">
@@ -95,10 +135,7 @@ export function Stage() {
               </span>
             </div>
           )}
-          <div
-            className="video-frame"
-            onMouseLeave={() => setHoverLabel(null)}
-          >
+          <div className="video-frame" onMouseLeave={() => setHoverLabel(null)}>
             <video
               ref={videoRef}
               className="stage-video"
@@ -130,12 +167,10 @@ export function Stage() {
                 {topVideoClip.id.slice(-6)}
               </button>
             )}
-            <div className="safe-frame" />
+            {state.safeFrame && <div className="safe-frame" />}
             <div className="frame-info">
               <span>{shotLabel}</span>
-              <span id="frameTime">
-                {(state.playheadUs / 1e6).toFixed(1)}s
-              </span>
+              <span id="frameTime">{(state.playheadUs / 1e6).toFixed(1)}s</span>
             </div>
             {hoverLabel && <div className="hover-label">clip · {hoverLabel.slice(-8)}</div>}
           </div>

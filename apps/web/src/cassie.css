@@ -105,6 +105,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   transition: border-color 0.15s, color 0.15s;
 }
 .secondary-btn:hover { border-color: var(--line-strong); color: var(--text); }
+.secondary-btn.active { color: var(--mint); border-color: rgba(99, 230, 189, 0.4); background: rgba(99, 230, 189, 0.06); }
 
 .ghost-btn {
   padding: 7px 10px;
@@ -222,6 +223,11 @@ button:disabled { opacity: 0.4; cursor: default; }
   font-weight: 700;
   font-size: 14px;
 }
+img.brand-mark {
+  background: none;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
 .brand-copy strong { font-size: 14px; letter-spacing: 0.01em; }
 .brand-copy span { display: block; font-size: 10px; color: var(--dim); font-family: var(--mono); letter-spacing: 0.06em; }
 
@@ -262,14 +268,42 @@ button:disabled { opacity: 0.4; cursor: default; }
 .app {
   height: calc(100% - 52px);
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr) 336px;
+  grid-template-columns: 264px 12px minmax(0, 1fr) 12px 336px;
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
-    "sidebar stage agent"
-    "timeline timeline timeline";
-  gap: 10px;
+    "sidebar d1 stage d2 agent"
+    "timeline timeline timeline timeline timeline";
+  gap: 10px 0;
   padding: 10px;
 }
+.sidebar { margin-right: 10px; }
+.stage-panel { margin: 0 10px; }
+.agent-panel { margin-left: 10px; }
+
+/* 面板分隔条：网格列占位，拖动调整左右栏宽度 */
+.panel-divider {
+  cursor: col-resize;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+}
+.panel-divider.left { grid-area: d1; }
+.panel-divider.right { grid-area: d2; }
+.panel-divider::after {
+  content: "";
+  width: 3px;
+  height: 48px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.panel-divider:hover::after,
+.panel-divider:active::after {
+  background: var(--purple);
+}
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing .app * { pointer-events: none; }
 
 .sidebar { grid-area: sidebar; display: flex; flex-direction: column; border-radius: var(--radius); }
 .stage-panel { grid-area: stage; display: flex; flex-direction: column; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); min-width: 0; }
@@ -437,6 +471,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   place-items: center;
   padding: 10px;
   min-height: 0;
+  overflow: hidden; /* 缩放预览时裁掉越界部分 */
   background:
     radial-gradient(900px 500px at 50% 20%, rgba(140, 114, 255, 0.06), transparent 65%),
     var(--bg);
@@ -447,6 +482,8 @@ button:disabled { opacity: 0.4; cursor: default; }
   max-width: 100%;
   display: grid;
   place-items: center;
+  transition: transform 0.15s ease-out;
+  will-change: transform;
 }
 /* 环绕氛围光：抵消竖屏视频两侧的空旷感 */
 .video-wrap::before {
@@ -877,12 +914,16 @@ button:disabled { opacity: 0.4; cursor: default; }
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  cursor: pointer;
+  cursor: grab;
   z-index: 2;
   min-width: 10px;
   text-align: left;
+  user-select: none;
+  touch-action: none;
 }
-.timeline-clip:hover { border-color: rgba(140, 114, 255, 0.7); }
+.timeline-clip.dragable:hover { border-color: rgba(140, 114, 255, 0.7); }
+.timeline-clip.dragable.dragging { cursor: grabbing; opacity: 0.85; border-color: var(--mint); }
+.timeline-clip.audio { background: rgba(247, 199, 108, 0.14); border-color: rgba(247, 199, 108, 0.35); }
 .timeline-clip.selected { border-color: var(--mint); box-shadow: 0 0 0 2px rgba(99, 230, 189, 0.25); }
 
 .semantic-track .semantic-clip {

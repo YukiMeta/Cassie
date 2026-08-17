@@ -8,9 +8,15 @@ import {
   setToast,
   useAppState,
 } from "../store";
-import type { EditTransaction } from "@cassie/harness";
+import type { EditTransaction, Scope } from "@cassie/harness";
 
 const HARNESS_FLOW = ["BOUND", "TRACED", "IMPACTED", "GUARDED", "PLANNED", "VALIDATING", "COMMITTED"];
+
+const SCOPE_OPTIONS: { label: string; scope: Scope }[] = [
+  { label: "主体生命周期", scope: "entity_lifecycle" },
+  { label: "本镜头", scope: "shot" },
+  { label: "从这里开始", scope: "from_here" },
+];
 
 function fmt(us: number): string {
   return `${(us / 1_000_000).toFixed(1)}s`;
@@ -28,13 +34,14 @@ function transactionLabel(tx: EditTransaction | undefined): string {
 export function AgentPanel() {
   const state = useAppState();
   const [input, setInput] = useState("把香水瓶替换成磨砂银瓶，从第一次出现到消失都保持同一个商品");
+  const [scope, setScope] = useState<Scope>("entity_lifecycle");
   const selected = state.selectedEntityId ? state.semantic.entities[state.selectedEntityId] : undefined;
   const lifecycle = selected ? deriveLifecycle(selected, state.adapter.getProject()) : null;
   const tx = state.transactions[state.transactions.length - 1];
 
   const plan = () => {
     try {
-      compileIntent(input);
+      compileIntent(input, scope);
       setToast("已生成 Harness 执行计划，请检查影响范围后提交。");
     } catch (error) {
       setToast(`计划生成失败：${error instanceof Error ? error.message : String(error)}`);
@@ -70,9 +77,15 @@ export function AgentPanel() {
             <dt>版本</dt><dd>Revision {state.adapter.getProject().revision}</dd>
           </dl>
           <div className="scope-row">
-            <span className="scope-chip active">主体生命周期</span>
-            <span className="scope-chip">本镜头</span>
-            <span className="scope-chip">从这里开始</span>
+            {SCOPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.scope}
+                className={`scope-chip ${scope === opt.scope ? "active" : ""}`}
+                onClick={() => setScope(opt.scope)}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -95,7 +108,7 @@ export function AgentPanel() {
         <div className="composer">
           <input value={input} onChange={(event) => setInput(event.target.value)} aria-label="Agent 指令" />
           <div className="reference-chips"><span className="reference-token">{selected?.reference ?? "@Nocturne_Bottle"}</span></div>
-          <div className="composer-row"><span className="composer-hint">普通编辑留在本机 · AI 只处理受影响片段</span><button className="primary-btn plan-btn" onClick={plan}>生成执行计划</button></div>
+          <div className="composer-row"><span className="composer-hint">每个修改都编译为可撤销语义事务 · 全程本地，零上传</span><button className="primary-btn plan-btn" onClick={plan}>生成执行计划</button></div>
         </div>
 
         {tx && <div className="plan-card visible">

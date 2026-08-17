@@ -21,7 +21,7 @@ import {
   type Project,
   type TimeUs,
 } from "@cassie/editor-core";
-import { Harness, type EditTransaction } from "@cassie/harness";
+import { Harness, type EditTransaction, type Scope } from "@cassie/harness";
 import type { EntityId, SemanticProject } from "@cassie/spec";
 
 /**
@@ -40,6 +40,12 @@ export interface AppState {
   exporting: boolean;
   booted: boolean;
   bootProgress: string | null;
+  /** 时间线拖拽吸附 0.5s */
+  snapEnabled: boolean;
+  /** 舞台安全框显示 */
+  safeFrame: boolean;
+  /** 舞台预览缩放（0.5–2） */
+  stageZoom: number;
 }
 
 let state: AppState;
@@ -97,6 +103,9 @@ export function initStore(): void {
     exporting: false,
     booted: false,
     bootProgress: null,
+    snapEnabled: true,
+    safeFrame: true,
+    stageZoom: 1,
   };
   adapter.subscribe(() => emit());
 
@@ -186,6 +195,31 @@ export function undo(): void {
 }
 export function redo(): void {
   state.adapter.redo();
+}
+
+export function toggleSnap(): void {
+  state.snapEnabled = !state.snapEnabled;
+  emit();
+}
+
+export function toggleSafeFrame(): void {
+  state.safeFrame = !state.safeFrame;
+  emit();
+}
+
+export function setStageZoom(zoom: number): void {
+  state.stageZoom = Math.max(0.5, Math.min(2, zoom));
+  emit();
+}
+
+export function stageZoomIn(): void {
+  setStageZoom(state.stageZoom + 0.25);
+}
+export function stageZoomOut(): void {
+  setStageZoom(state.stageZoom - 0.25);
+}
+export function stageZoomFit(): void {
+  setStageZoom(1);
 }
 
 // ---------- 演示项目 ----------
@@ -303,10 +337,11 @@ function emptySemantic(editorProjectId: string): SemanticProject {
 
 // ---------- Harness 桥接 ----------
 
-export function compileIntent(text: string): EditTransaction {
+export function compileIntent(text: string, scopeOverride?: Scope): EditTransaction {
   const tx = state.harness.compile(text, {
     playheadUs: state.playheadUs,
     selectedEntityId: state.selectedEntityId ?? undefined,
+    scopeOverride,
   });
   state.transactions = state.harness.listTransactions();
   emit();

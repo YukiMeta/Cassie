@@ -37,7 +37,7 @@ export function Topbar() {
   return (
     <header className="topbar">
       <div className="brand">
-        <div className="brand-mark">C</div>
+        <img className="brand-mark" src="/brand/logo-64.png" alt="Cassie" width={28} height={28} />
         <div className="brand-copy">
           <strong>Cassie</strong>
           <span>Semantic Video Editor</span>
@@ -52,9 +52,9 @@ export function Topbar() {
         <span className="autosave">● 已保存</span>
       </div>
       <nav className="mode-switch" aria-label="工作模式">
-        <button disabled>故事板</button>
+        <button onClick={() => setToast("故事板模式：v2 规划中")}>故事板</button>
         <button className="active">导演画布</button>
-        <button disabled>成片</button>
+        <button onClick={() => setToast("成片模式：先导出 MP4 或在 v2 中直接交付")}>成片</button>
       </nav>
       <div className="top-actions">
         <button

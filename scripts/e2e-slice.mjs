@@ -139,7 +139,95 @@ try {
   await evalJS(`document.querySelector(".asset-card .lock-btn").click()`);
   await sleep(300);
 
-  console.log(failures === 0 ? "\nE2E 垂直切片全部通过 ✅" : `\n${failures} 项失败 ❌`);
+  // ---------- 交互逻辑排查 ----------
+
+  const rectOf = async (selector) =>
+    await evalJS(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+  const mouse = (type, x, y, extra = {}) =>
+    send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, ...extra });
+  const dragMouse = async (from, to, steps = 8) => {
+    await mouse("mousePressed", from.x, from.y, { buttons: 1 });
+    for (let i = 1; i <= steps; i++) {
+      await mouse("mouseMoved", from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps, { buttons: 1 });
+      await sleep(30);
+    }
+    await mouse("mouseReleased", to.x, to.y);
+    await sleep(400);
+  };
+
+  // 7. 舞台缩放：＋/－/适应
+  const zoomBtn = await rectOf(".stage-toolbar .tool-group:last-child .tool-btn:last-child");
+  await mouse("mousePressed", zoomBtn.x + zoomBtn.w / 2, zoomBtn.y + zoomBtn.h / 2);
+  await mouse("mouseReleased", zoomBtn.x + zoomBtn.w / 2, zoomBtn.y + zoomBtn.h / 2);
+  await sleep(300);
+  const zoomText = await evalJS(`document.querySelector(".stage-toolbar .zoom")?.textContent`);
+  assert(zoomText?.includes("125"), "舞台放大 + → 125%", zoomText);
+  await evalJS(`document.querySelector(".stage-toolbar .zoom").click()`);
+  await sleep(300);
+  const zoomBack = await evalJS(`document.querySelector(".stage-toolbar .zoom")?.textContent`);
+  assert(zoomBack?.includes("100"), "适应画布 → 100%", zoomBack);
+
+  // 8. 安全框开关
+  let safeVisible = await evalJS(`!!document.querySelector(".video-frame .safe-frame")`);
+  await evalJS(`[...document.querySelectorAll(".stage-toolbar .tool-btn")].find(b => b.textContent.includes("安全框")).click()`);
+  await sleep(300);
+  let safeHidden = await evalJS(`!document.querySelector(".video-frame .safe-frame")`);
+  assert(safeVisible && safeHidden, "安全框开关：显示 → 隐藏");
+  await evalJS(`[...document.querySelectorAll(".stage-toolbar .tool-btn")].find(b => b.textContent.includes("安全框")).click()`);
+  await sleep(300);
+
+  // 9. 时间线缩放
+  const tlZoomBefore = await evalJS(`(() => { const el = document.querySelector(".timeline-clip"); return el ? parseFloat(el.style.width) : -1; })()`);
+  await evalJS(`[...document.querySelectorAll(".timeline-tools .secondary-btn")].find(b => b.textContent.trim() === "＋").click()`);
+  await sleep(400);
+  const tlZoomAfter = await evalJS(`(() => { const el = document.querySelector(".timeline-clip"); return el ? parseFloat(el.style.width) : -1; })()`);
+  assert(tlZoomBefore > 0 && Math.abs(tlZoomAfter - tlZoomBefore * 2) < 0.01, `时间线放大 2×：${tlZoomBefore.toFixed(1)}% → ${tlZoomAfter.toFixed(1)}%`);
+  await evalJS(`[...document.querySelectorAll(".timeline-tools .secondary-btn")].find(b => b.textContent.trim() === "−").click()`);
+  await sleep(300);
+
+  // 10. 片段拖拽移动（2s）+ 撤销（用 clip 真实位置断言，selection-readout 依赖选中状态不可靠）
+  const bottleStartUs = async () =>
+    await evalJS(`(() => { const s = window.__cassie.getState(); const p = s.adapter.getProject(); const c = p.tracks.flatMap(t => t.clips).find(c => c.assetId && p.assets[c.assetId]?.name === "bottle.mp4"); return c ? c.startUs : -1; })()`);
+  const startBefore = await bottleStartUs();
+  const bottleClip = await rectOf(`.timeline-clip[data-clip-id]`);
+  await dragMouse(
+    { x: bottleClip.x + bottleClip.w / 2, y: bottleClip.y + bottleClip.h / 2 },
+    { x: bottleClip.x + bottleClip.w / 2 + 100, y: bottleClip.y + bottleClip.h / 2 },
+  );
+  const startAfterDrag = await bottleStartUs();
+  assert(startAfterDrag !== startBefore, `片段拖拽移动生效（${startBefore / 1e6}s → ${startAfterDrag / 1e6}s）`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", modifiers: 4, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", modifiers: 4, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90 });
+  await sleep(400);
+  const startAfterUndo = await bottleStartUs();
+  assert(startAfterUndo === startBefore, `⌘Z 撤销拖拽，回到原位（${startAfterUndo / 1e6}s）`);
+
+  // 11. 空格播放/暂停
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  await sleep(600);
+  const playing = await evalJS(`document.querySelector(".play-btn")?.textContent`);
+  assert(playing === "❚❚", "空格开始播放", playing);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  await sleep(300);
+  const paused = await evalJS(`document.querySelector(".play-btn")?.textContent`);
+  assert(paused === "▶", "空格暂停", paused);
+
+  // 12. 面板分隔条拖拽（左栏 +40px）
+  const divider = await rectOf(".panel-divider.left");
+  const colsBefore = await evalJS(`document.querySelector(".app")?.style.gridTemplateColumns`);
+  await dragMouse({ x: divider.x + divider.w / 2, y: divider.y + 60 }, { x: divider.x + divider.w / 2 + 40, y: divider.y + 60 }, 6);
+  const colsAfter = await evalJS(`document.querySelector(".app")?.style.gridTemplateColumns`);
+  const wBefore = parseInt(colsBefore);
+  const wAfter = parseInt(colsAfter);
+  assert(!isNaN(wAfter) && wAfter - wBefore === 40, `面板拖拽调宽：${wBefore}px → ${wAfter}px`, colsAfter);
+  // 拖回
+  const divider2 = await rectOf(".panel-divider.left");
+  await dragMouse({ x: divider2.x + divider2.w / 2, y: divider2.y + 60 }, { x: divider2.x + divider2.w / 2 - 40, y: divider2.y + 60 }, 6);
+  await sleep(300);
+
+  console.log(failures === 0 ? "\nE2E 垂直切片 + 交互排查 全部通过 ✅" : `\n${failures} 项失败 ❌`);
 } finally {
   ws.close();
   chrome.kill();
