@@ -3,3 +3,6 @@ dist/
 .DS_Store
 *.local
 apps/web/public/ffmpeg/
+
+# OpenCut 参考实现（独立 clone，只读参考，不入库）
+reference/

@@ -2,7 +2,7 @@
   "projectJson": {
     "schema": "cassie/project",
     "version": 1,
-    "savedAt": "2026-08-17T13:27:43.667Z",
+    "savedAt": "$savedAt",
     "project": {
       "id": "$1",
       "name": "NOCTURNE · Director Cut",

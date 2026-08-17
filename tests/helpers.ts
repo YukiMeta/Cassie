@@ -119,6 +119,8 @@ export function normalizeForGolden(value: unknown): unknown {
     if (v === null || v === undefined) return v;
     if (typeof v === "number" || typeof v === "boolean") return v;
     if (typeof v === "string") {
+      // 时间戳字段统一抹平，保证快照与运行时间无关
+      if (key === "savedAt" || key === "atUs") return `$${key}`;
       const isIdField = key === "id" || key === "assetId" || key === "clipId" || key === "trackId" || key === "editorProjectId";
       const looksGenerated = /^[\w-]{8,}$/.test(v) && isIdField;
       if (!looksGenerated) return v;
