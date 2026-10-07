@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { llmChat, type LlmConfig, type VisionConfig } from "../lib/model-client";
+import { llmChat, renderHealth, type LlmConfig, type RenderConfig, type VisionConfig } from "../lib/model-client";
 import { saveModelConfig, setSettingsOpen, setToast, useAppState, type ModelConfigState } from "../store";
 
 /**
@@ -10,7 +10,7 @@ import { saveModelConfig, setSettingsOpen, setToast, useAppState, type ModelConf
 export function SettingsModal() {
   const state = useAppState();
   const [draft, setDraft] = useState<ModelConfigState>(state.modelConfig);
-  const [testing, setTesting] = useState<"llm" | "vision" | null>(null);
+  const [testing, setTesting] = useState<"llm" | "vision" | "render" | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const save = () => {
@@ -49,8 +49,23 @@ export function SettingsModal() {
     }
   };
 
+  const testRender = async () => {
+    setTesting("render");
+    setTestResult(null);
+    try {
+      await renderHealth(draft.render);
+      setTestResult({ ok: true, message: "渲染服务在线" });
+    } catch (err) {
+      setTestResult({ ok: false, message: `无法连接 ${draft.render.baseUrl}：${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setTesting(null);
+    }
+  };
+
   const llm = draft.llm;
   const vision = draft.vision;
+  const render = draft.render;
+  const setRender = (patch: Partial<RenderConfig>) => setDraft((d) => ({ ...d, render: { ...d.render, ...patch } }));
   const setLlm = (patch: Partial<LlmConfig>) => setDraft((d) => ({ ...d, llm: { ...d.llm, ...patch } }));
   const setVision = (patch: Partial<VisionConfig>) => setDraft((d) => ({ ...d, vision: { ...d.vision, ...patch } }));
 
@@ -156,6 +171,53 @@ export function SettingsModal() {
               <div className="settings-test">
                 <button className="secondary-btn" disabled={testing !== null} onClick={() => void testVision()}>
                   {testing === "vision" ? "测试中…" : "测试连接"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <div>
+              <strong>渲染服务</strong>
+              <p>
+                逐帧确定性渲染成片，支持更高画质与更完整的字体排版。运行本地服务（servers/render），
+                或填入部署好的渲染端点；关闭时在浏览器本地导出。
+              </p>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={render.enabled}
+                onChange={(e) => setRender({ enabled: e.target.checked })}
+              />
+              <span />
+            </label>
+          </div>
+          {render.enabled && (
+            <div className="settings-fields">
+              <label>
+                <span>服务地址</span>
+                <input
+                  value={render.baseUrl}
+                  placeholder="http://localhost:8797"
+                  onChange={(e) => setRender({ baseUrl: e.target.value })}
+                />
+              </label>
+              <label>
+                <span>访问令牌（可选）</span>
+                <input
+                  type="password"
+                  value={render.apiKey}
+                  placeholder="本地服务无需"
+                  autoComplete="off"
+                  onChange={(e) => setRender({ apiKey: e.target.value })}
+                />
+              </label>
+              <div className="settings-test">
+                <button className="secondary-btn" disabled={testing !== null} onClick={() => void testRender()}>
+                  {testing === "render" ? "测试中…" : "测试连接"}
                 </button>
               </div>
             </div>

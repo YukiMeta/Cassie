@@ -1,0 +1,8 @@
+{
+  "name": "@cassie/cli",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "bin": { "cassie": "bin/cassie.mjs" },
+  "dependencies": { "@cassie/harness": "*", "@cassie/spec": "*", "@cassie/runtime": "*", "tsx": "4.23.15" }
+}

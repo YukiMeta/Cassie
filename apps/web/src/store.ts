@@ -22,8 +22,11 @@ import {
   type TimeUs,
 } from "@cassie/editor-core";
 import { Harness, parseIntent, type EditTransaction, type Intent, type Scope } from "@cassie/harness";
-import { llmParseIntent, type LlmConfig, type VisionConfig } from "./lib/model-client";
-import type { EntityId, SemanticEntity, SemanticProject } from "@cassie/spec";
+import { llmParseIntent, type LlmConfig, type RenderConfig, type VisionConfig } from "./lib/model-client";
+import type { DocumentEdit, EntityId, EventDocument, EventWorkspace, ResolvedEvent, SemanticEntity, SemanticProject, SubjectRegion } from "@cassie/spec";
+import { projectToJson } from "@cassie/editor-core";
+import * as rt from "./lib/runtime";
+import type { DetectedObject } from "./lib/runtime";
 
 /**
  * 应用状态。所有变更走 EditorAdapter（可撤销），Harness 负责语义事务。
@@ -57,11 +60,26 @@ export interface AppState {
   parsing: boolean;
   /** 分区布局：面板 ↔ 槽位 映射 + 尺寸（可拖拽重排、双向调尺寸，持久化） */
   layout: LayoutState;
+  /** 连接本机运行时时的工程（唯一事实源）；为 null 时是浏览器内离线演示 */
+  runtime: RuntimeState | null;
+  /** 当前选中的局部主体区域（属于 selectedEntityId） */
+  selectedRegionId: string | null;
+  /** 画布上的物体识别结果（未认领） */
+  detection: { layerId: string; sourceFrame: number; objects: DetectedObject[] } | null;
+  /** 运行时任务进行中的说明（识别、跟踪、渲染） */
+  busy: string | null;
+}
+
+export interface RuntimeState {
+  workspace: EventWorkspace;
+  document: EventDocument;
+  events: ResolvedEvent[];
 }
 
 export interface ModelConfigState {
   llm: LlmConfig;
   vision: VisionConfig;
+  render: RenderConfig;
 }
 
 /** 四个分区面板 */
@@ -138,8 +156,13 @@ export function initStore(): void {
     parseMode: "llm",
     parsing: false,
     layout: loadLayout(),
+    runtime: null,
+    selectedRegionId: null,
+    detection: null,
+    busy: null,
   };
   adapter.subscribe(() => emit());
+  void connectRuntime();
 
   // 恢复自动保存：项目 + 语义层一起持久化（语义绑定依赖项目稳定 ID）
   const raw = localStorage.getItem("cassie:autosave");
@@ -178,6 +201,8 @@ export function setToast(message: string): void {
 export function selectEntity(entityId: EntityId | null): void {
   state.selectedEntityId = entityId;
   state.selectedClipId = null;
+  const owned = entityId ? regionsOf(entityId) : [];
+  if (!owned.some((r) => r.id === state.selectedRegionId)) state.selectedRegionId = owned[0]?.id ?? null;
   emit();
 }
 
@@ -239,10 +264,177 @@ export function togglePlay(): void {
 }
 
 export function undo(): void {
+  if (state.runtime) {
+    const tx = state.runtime.workspace.transactions.filter((t) => t.status === "committed").at(-1);
+    if (!tx) return;
+    void runtimeTask("撤销中…", async () => {
+      await rt.rollback(tx.id);
+      await reloadRuntime();
+      setToast("已撤销最近一次修改");
+    });
+    return;
+  }
   state.adapter.undo();
 }
 export function redo(): void {
+  if (state.runtime) {
+    setToast("运行时工程暂不支持重做：撤销记录保存在历史里");
+    return;
+  }
   state.adapter.redo();
+}
+
+// ---------- 运行时工程 ----------
+
+/** 运行时可用时，工程以运行时文件为准：编辑全部走服务端事务，可撤销、可复验。 */
+export async function connectRuntime(): Promise<boolean> {
+  if (!(await rt.runtimeAvailable())) return false;
+  try {
+    await reloadRuntime();
+    state.booted = true;
+    state.playheadUs = 0;
+    emit();
+    return true;
+  } catch (err) {
+    setToast(`运行时工程读取失败：${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+export async function reloadRuntime(): Promise<void> {
+  const { workspace, events } = await rt.fetchProject();
+  const document = workspace.document;
+  state.runtime = { workspace, document, events };
+  state.adapter.load(projectToJson(document.editor));
+  state.adapter.rehydrate((id) => (document.media[id] ? rt.mediaUrl(id) : undefined));
+  state.semantic = document.semantic;
+  state.harness.setSemantic(state.semantic);
+  if (state.selectedRegionId && !document.regions?.[state.selectedRegionId]) state.selectedRegionId = null;
+  if (state.selectedEntityId && !document.semantic.entities[state.selectedEntityId]) state.selectedEntityId = null;
+  emit();
+}
+
+async function runtimeTask<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
+  if (state.busy) {
+    setToast(`请等待：${state.busy}`);
+    return undefined;
+  }
+  state.busy = label;
+  emit();
+  try {
+    return await fn();
+  } catch (err) {
+    setToast(err instanceof Error ? err.message : String(err));
+    await reloadRuntime().catch(() => undefined);
+    return undefined;
+  } finally {
+    state.busy = null;
+    emit();
+  }
+}
+
+export function runtimeEdit(edit: DocumentEdit, done?: string): Promise<unknown> {
+  return runtimeTask("保存中…", async () => {
+    await rt.applyEdit(state.runtime!.document.editor.revision, edit);
+    await reloadRuntime();
+    if (done) setToast(done);
+  });
+}
+
+const frameRate = (d: EventDocument) => d.frameRate.num / d.frameRate.den;
+
+/** 时间线手势落盘：片段或主体轨道对应的语义事件，按整帧写回。 */
+export function commitEventTiming(eventId: string, startUs: TimeUs, endUs: TimeUs): void {
+  const r = state.runtime;
+  if (!r) return;
+  const fps = frameRate(r.document);
+  const startFrame = Math.max(0, Math.round((startUs / 1e6) * fps));
+  const durationFrames = Math.max(1, Math.round(((endUs - startUs) / 1e6) * fps));
+  const old = r.events.find((e) => e.id === eventId);
+  if (old && old.startFrame === startFrame && old.endFrame - old.startFrame === durationFrames) return;
+  void runtimeEdit({ kind: "set-event-timing", eventId, startFrame, durationFrames }, "时间已更新；依赖事件已重新计算");
+}
+
+export function eventOfClip(clipId: string): string | null {
+  return state.runtime?.document.events.find((e) => e.clipId === clipId)?.id ?? null;
+}
+
+export function regionsOf(entityId: EntityId): SubjectRegion[] {
+  return Object.values(state.runtime?.document.regions ?? {}).filter((r) => r.entityId === entityId);
+}
+
+export function selectRegion(regionId: string | null): void {
+  const region = regionId ? state.runtime?.document.regions?.[regionId] : undefined;
+  state.selectedRegionId = region?.id ?? null;
+  if (region) state.selectedEntityId = region.entityId;
+  state.selectedClipId = null;
+  emit();
+}
+
+/** 当前播放头处的视频镜头层（识别物体的目标）。 */
+export function videoLayerAt(frame: number) {
+  const r = state.runtime;
+  if (!r) return null;
+  return r.document.scene.layers.find((l) => {
+    if (l.kind !== "video" || !l.eventId) return false;
+    const e = r.events.find((x) => x.id === l.eventId);
+    return e?.active && e.startFrame <= frame && frame < e.endFrame;
+  }) ?? null;
+}
+
+export function playheadFrame(): number {
+  return state.runtime ? Math.round((state.playheadUs / 1e6) * frameRate(state.runtime.document)) : 0;
+}
+
+export function detectAtPlayhead(): void {
+  const layer = videoLayerAt(playheadFrame());
+  if (!layer) {
+    setToast("当前帧没有视频镜头");
+    return;
+  }
+  state.playing = false;
+  void runtimeTask("正在识别当前帧中的物体…", async () => {
+    const result = await rt.detectObjects(layer.id, playheadFrame());
+    state.detection = result;
+    setToast(result.objects.length ? `识别到 ${result.objects.length} 个物体：点击一个框，单独选中并跟踪它` : "没有识别到物体");
+  });
+}
+
+export function clearDetection(): void {
+  state.detection = null;
+  emit();
+}
+
+/** 认领识别框：在整个镜头内跟踪，生成局部主体区域（同名物体跨镜头归入同一主体）。 */
+export function claimDetected(object: DetectedObject): void {
+  const det = state.detection;
+  if (!det || !state.runtime) return;
+  const before = new Set(Object.keys(state.runtime.document.regions ?? {}));
+  const sameName = Object.values(state.semantic.entities).find((e) => e.attributes.regions && e.name === object.label);
+  void runtimeTask(`正在跟踪「${object.label}」…`, async () => {
+    await rt.claimRegion(state.runtime!.document.editor.revision, det.layerId, det.sourceFrame, object.box, object.label, sameName?.id);
+    state.detection = null;
+    await reloadRuntime();
+    const created = Object.values(state.runtime!.document.regions ?? {}).find((r) => !before.has(r.id));
+    if (created) selectRegion(created.id);
+    setToast(`已选中「${object.label}」：在右侧直接修改，只作用于物体框内`);
+  });
+}
+
+export function setRegionLook(regionIds: string[], patch: Partial<SubjectRegion["look"]>): void {
+  void runtimeTask("保存中…", async () => {
+    for (const id of regionIds) {
+      await rt.applyEdit(state.runtime!.document.editor.revision, { kind: "set-region-look", regionId: id, patch });
+      await reloadRuntime();
+    }
+  });
+}
+
+export async function exportRuntime(): Promise<string | undefined> {
+  return runtimeTask("渲染中…", () => rt.renderJob((m) => {
+    state.busy = m;
+    emit();
+  }));
 }
 
 export function toggleSnap(): void {
@@ -273,6 +465,7 @@ export function loadModelConfig(): ModelConfigState {
       model: "deepseek-chat",
     },
     vision: { enabled: false, baseUrl: "http://localhost:8000", apiKey: "" },
+    render: { enabled: false, baseUrl: "http://localhost:8797", apiKey: "" },
   };
   try {
     const raw = localStorage.getItem(MODEL_CONFIG_KEY);
@@ -281,6 +474,7 @@ export function loadModelConfig(): ModelConfigState {
       return {
         llm: { ...defaults.llm, ...(parsed.llm ?? {}) },
         vision: { ...defaults.vision, ...(parsed.vision ?? {}) },
+        render: { ...defaults.render, ...(parsed.render ?? {}) },
       };
     }
   } catch {

@@ -1251,3 +1251,28 @@ body.resizing .app * { pointer-events: none; }
 .transcript-chip:hover { border-color: var(--line-strong); color: var(--text); }
 .transcript-chip.active { border-color: rgba(99, 230, 189, 0.5); color: var(--mint); }
 .transcript-chip.active b { color: var(--mint); }
+
+/* Runtime canvas + region editing */
+.stage-workspace.runtime{display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0}
+.runtime-frame{position:relative;flex:none;box-shadow:0 12px 48px #0008}
+.runtime-frame iframe{position:absolute;left:0;top:0;border:0;transform-origin:0 0;pointer-events:none}
+.runtime-overlay,.detect-layer{position:absolute;inset:0;z-index:2}
+.region-outline{position:absolute;border:1.5px solid #63e6bd88;pointer-events:none}
+.region-outline.hover{border-color:#63e6bd}
+.region-outline.selected{border-color:#a58aff;box-shadow:inset 0 0 0 999px #a58aff14}
+.region-outline span{position:absolute;left:-1px;top:-18px;background:#a58aff;color:#fff;font-size:10px;line-height:16px;padding:0 6px;border-radius:3px 3px 0 0}
+.detect-box{position:absolute;border:2px solid #2f7cf6;background:rgba(47,124,246,.08);border-radius:4px;padding:0;cursor:pointer}
+.detect-box:hover:not(:disabled){background:rgba(47,124,246,.22);border-color:#fff}
+.detect-box span{position:absolute;left:-2px;top:-18px;background:#2f7cf6;color:#fff;font-size:10px;line-height:16px;padding:0 6px;border-radius:3px 3px 0 0;white-space:nowrap}
+.stage-busy{font-size:11px;color:#63e6bd;margin-left:8px}
+.region-card .region-field{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:11px;color:#9aa3b5}
+.region-card .region-field input[type=color]{width:42px;height:24px;border:0;background:none;padding:0}
+.region-card .region-field input[type=range]{flex:1;accent-color:#63e6bd}
+.occurrence-list{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.occurrence{text-align:left;border:1px solid #ffffff12;background:#ffffff05;border-radius:6px;padding:7px 9px;color:#d7dbe6}
+.occurrence.active{border-color:#a58aff55;background:#a58aff14}
+.occurrence small{display:block;margin-top:3px;color:#7e8798;font-size:10px}
+.region-note{font-size:10px;color:#7e8798;line-height:1.5;margin:10px 0 0}
+.semantic-track.selected .track-label{color:#a58aff}
+.semantic-clip.dragable{cursor:grab}
+.semantic-clip.selected{outline:1px solid #a58aff}

@@ -61,6 +61,18 @@ function runSlice() {
 }
 
 describe("harness · NOCTURNE 垂直切片", () => {
+  it("拒绝过期提交，事务回滚只应用自己的逆命令", () => {
+    const adapter = new LocalAdapter(makeFixtureProject());
+    const harness = new Harness(adapter, makeSemanticProject());
+    const tx = harness.compile("提前2秒", { selectedEntityId: "product" });
+    const stale = harness.compile("替换成银瓶", { selectedEntityId: "product" });
+    harness.commit(tx);
+    expect(harness.commit(stale).status).toBe("FAILED");
+    harness.rollback(tx);
+    expect(tx.status).toBe("ROLLED_BACK");
+    expect(findClip(adapter.getProject(), "clip_bottle")!.clip.startUs).toBe(4_000_000);
+    expect(adapter.getProject().revision).toBe(2);
+  });
   it("全生命期替换：编译 → 提交 → 影响分析 → 撤销", () => {
     const adapter = new LocalAdapter(makeFixtureProject());
     const harness = new Harness(adapter, makeSemanticProject());

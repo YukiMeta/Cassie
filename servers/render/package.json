@@ -1,0 +1,17 @@
+{
+  "name": "@cassie/render-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cassie 服务端渲染：项目文档 → HTML composition → MP4（基于 HyperFrames producer）",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "@hyperframes/producer": "^0.8.128",
+    "ffmpeg-static": "^5.3.0",
+    "tsx": "^4.23.15"
+  }
+}

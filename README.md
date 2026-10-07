@@ -1,5 +1,7 @@
 # Cassie
 
+当前开发方向见 **[Cassie v2 架构](docs/architecture-v2.md)**：原版 `apps/web` 做产品壳，本仓库运行时做引擎。CLI / 事件事务说明见 [studio-runtime.md](docs/studio-runtime.md)。以下愿景描述不代表全部能力已经实现。
+
 ## 像编辑图层一样编辑视频
 
 每一个用 AI 生成过视频的人，大概都经历过这个瞬间：

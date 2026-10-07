@@ -4,6 +4,9 @@ import type { Clip, Project, TimeUs } from "@cassie/editor-core";
 import { deriveLifecycle } from "@cassie/spec";
 import {
   autosave,
+  commitEventTiming,
+  eventOfClip,
+  selectRegion,
   hasKeyframeAtPlayhead,
   selectClip,
   setPlayhead,
@@ -42,6 +45,46 @@ export function Timeline() {
   const durationUs = project.settings.durationUs;
   const pct = (us: TimeUs) => `${(us / durationUs) * zoom * 100}%`;
   const rulerRef = useRef<HTMLDivElement | null>(null);
+  const runtime = state.runtime;
+  const fps = runtime ? runtime.document.frameRate.num / runtime.document.frameRate.den : 30;
+  const snapUs = runtime ? 1e6 / fps : SNAP_US;
+  const frameUs = (f: number) => (f / fps) * 1e6;
+  const tickStep = durationUs <= 8e6 ? 1 : durationUs <= 30e6 ? 3 : 10;
+  const ticks = Array.from({ length: Math.floor(durationUs / 1e6 / tickStep) + 1 }, (_, i) => i * tickStep);
+  const chips = runtime
+    ? runtime.events.filter((e) => e.active && e.kind !== "reveal").map((e) => ({ time: frameUs(e.startFrame) / 1e6, label: runtime.document.events.find((x) => x.id === e.id)?.label ?? e.id }))
+    : TRANSCRIPT;
+  const [dragging, setDragging] = useState<{ eventId: string; startUs: number; endUs: number } | null>(null);
+
+  /** 主体轨道上的一处出现（区域事件）：拖动移动、两端裁剪，松手写回一次事务。 */
+  const onEventPointerDown = (e: React.PointerEvent, eventId: string, startUs: number, endUs: number) => {
+    e.stopPropagation();
+    const region = Object.values(runtime?.document.regions ?? {}).find((r) => r.eventId === eventId);
+    if (region) selectRegion(region.id);
+    const canvas = (e.currentTarget as HTMLElement).closest(".track-canvas") as HTMLElement | null;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const originX = e.clientX;
+    const edge = (e.target as HTMLElement).closest(".edge-handle")?.getAttribute("data-edge") ?? "move";
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    let next = { eventId, startUs, endUs };
+    const move = (ev: PointerEvent) => {
+      const delta = Math.round((((ev.clientX - originX) / rect.width / zoom) * durationUs) / snapUs) * snapUs;
+      if (edge === "move") next = { eventId, startUs: Math.max(0, startUs + delta), endUs: Math.max(0, startUs + delta) + endUs - startUs };
+      else if (edge === "start") next = { eventId, startUs: Math.max(0, Math.min(endUs - snapUs, startUs + delta)), endUs };
+      else next = { eventId, startUs, endUs: Math.max(startUs + snapUs, endUs + delta) };
+      setDragging(next);
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      setDragging(null);
+      commitEventTiming(eventId, next.startUs, next.endUs);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  };
 
   const scrub = (clientX: number) => {
     const rect = rulerRef.current?.getBoundingClientRect();
@@ -75,25 +118,29 @@ export function Timeline() {
     el.classList.add("dragging");
 
     let finalCmd: Parameters<typeof state.adapter.applyCommands>[0] | null = null;
+    let finalRange = { startUs: originalStart, endUs: originalEnd };
 
     const move = (ev: PointerEvent) => {
       const rawDeltaUs = ((ev.clientX - originX) / rect.width / zoom) * durationUs;
-      const deltaUs = state.snapEnabled ? Math.round(rawDeltaUs / SNAP_US) * SNAP_US : rawDeltaUs;
+      const deltaUs = state.snapEnabled || runtime ? Math.round(rawDeltaUs / snapUs) * snapUs : rawDeltaUs;
       if (edge === "move") {
         const start = Math.max(0, originalStart + deltaUs);
         const cmd = [moveClipCmd(clip.id, start, trackId)];
         state.adapter.applyCommands(cmd, { recordHistory: false });
         finalCmd = cmd;
+        finalRange = { startUs: start, endUs: start + originalEnd - originalStart };
       } else if (edge === "start") {
         const start = Math.max(0, Math.min(originalEnd - 1_000, originalStart + deltaUs));
         const cmd = [setClipRangeCmd(clip.id, { startUs: start })];
         state.adapter.applyCommands(cmd, { recordHistory: false });
         finalCmd = cmd;
+        finalRange = { startUs: start, endUs: originalEnd };
       } else {
         const end = Math.min(durationUs, Math.max(originalStart + 1_000, originalEnd + deltaUs));
         const cmd = [setClipRangeCmd(clip.id, { endUs: end })];
         state.adapter.applyCommands(cmd, { recordHistory: false });
         finalCmd = cmd;
+        finalRange = { startUs: originalStart, endUs: end };
       }
     };
     const up = () => {
@@ -110,6 +157,11 @@ export function Timeline() {
               ? [setClipRangeCmd(clip.id, { startUs: originalStart })]
               : [setClipRangeCmd(clip.id, { endUs: originalEnd })];
         state.adapter.applyCommands(restoreCmd, { recordHistory: false });
+        if (state.runtime) {
+          const eventId = eventOfClip(clip.id);
+          if (eventId) commitEventTiming(eventId, finalRange.startUs, finalRange.endUs);
+          return;
+        }
         state.adapter.applyCommands(finalCmd);
         autosave();
       }
@@ -198,8 +250,8 @@ export function Timeline() {
               e.currentTarget.addEventListener("pointerup", up);
             }}
           >
-            {[0, 3, 6, 9, 12, 15].map((s) => (
-              <span key={s} className="tick" style={{ left: `${(s / 15) * zoom * 100}%` }}>
+            {ticks.map((s) => (
+              <span key={s} className="tick" style={{ left: pct(s * 1e6) }}>
                 {s}s
               </span>
             ))}
@@ -262,7 +314,46 @@ export function Timeline() {
           </div>
         ))}
 
-        {view === "semantic" &&
+        {view === "semantic" && runtime &&
+          semanticRows.filter(({ entity }) => entity.attributes.regions).map(({ entity }) => {
+            const occurrences = runtime.events.filter((e) => e.entityId === entity.id && e.active);
+            return (
+              <div className={`track-row semantic-track ${state.selectedEntityId === entity.id ? "selected" : ""}`} key={entity.id}>
+                <div className="track-label">
+                  <b>◎</b>
+                  <span>{entity.name}</span>
+                  <small>{occurrences.length} 处出现</small>
+                </div>
+                <div className="track-canvas" style={{ minWidth: `${zoom * 100}%` }} onPointerDown={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setPlayhead(((e.clientX - rect.left) / rect.width / zoom) * durationUs);
+                }}>
+                  {occurrences.map((o) => {
+                    const live = dragging?.eventId === o.id ? dragging : { startUs: frameUs(o.startFrame), endUs: frameUs(o.endFrame) };
+                    const region = Object.values(runtime.document.regions ?? {}).find((r) => r.eventId === o.id);
+                    return (
+                      <div
+                        key={o.id}
+                        className={`semantic-clip dragable ${region && state.selectedRegionId === region.id ? "selected" : ""}`}
+                        style={{ left: pct(live.startUs), width: pct(live.endUs - live.startUs) }}
+                        onPointerDown={(e) => onEventPointerDown(e, o.id, frameUs(o.startFrame), frameUs(o.endFrame))}
+                        title={`${(live.startUs / 1e6).toFixed(2)}s—${(live.endUs / 1e6).toFixed(2)}s`}
+                      >
+                        <span className="edge-handle in" data-edge="start" />
+                        <span className="clip-name">{runtime.document.events.find((x) => x.id === o.id)?.label ?? o.id}</span>
+                        <span className="entry-label">{(live.startUs / 1e6).toFixed(1)}s</span>
+                        <span className="exit-label">{(live.endUs / 1e6).toFixed(1)}s</span>
+                        <span className="edge-handle out" data-edge="end" />
+                      </div>
+                    );
+                  })}
+                  <div className="playhead" style={{ left: playhead }} />
+                </div>
+              </div>
+            );
+          })}
+
+        {view === "semantic" && !runtime &&
           semanticRows.map(({ entity, lifecycle, clips }) => (
             <div className="track-row semantic-track" key={entity.id}>
               <div className="track-label">
@@ -295,9 +386,9 @@ export function Timeline() {
       </div>
       <div className="transcript">
         <div className="transcript-label">语义定位</div>
-        {TRANSCRIPT.map((chip) => (
+        {chips.map((chip) => (
           <button
-            key={chip.time}
+            key={`${chip.time}-${chip.label}`}
             className={`transcript-chip ${Math.abs(state.playheadUs / 1e6 - chip.time) < 0.5 ? "active" : ""}`}
             onClick={() => setPlayhead(chip.time * 1_000_000)}
           >

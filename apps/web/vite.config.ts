@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { Readable } from "node:stream";
 
 /**
  * 模型代理：浏览器把用户自填的 baseUrl/apiKey 随请求发给本机 dev server，
@@ -23,6 +24,31 @@ function modelProxy(): Plugin {
             : await callOpenAI(cfg, messages);
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(upstream));
+        } catch (err) {
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      // 渲染服务代理：/api/render/<path> → <X-Render-Base>/<path>，请求体（multipart）流式透传
+      server.middlewares.use("/api/render", async (req, res) => {
+        try {
+          const base = String(req.headers["x-render-base"] ?? "").replace(/\/$/, "");
+          if (!base) throw new Error("未配置渲染服务地址");
+          const key = String(req.headers["x-render-key"] ?? "");
+          const hasBody = req.method === "POST";
+          const upstream = await fetch(`${base}${req.url ?? "/"}`, {
+            method: req.method,
+            headers: {
+              ...(req.headers["content-type"] ? { "Content-Type": String(req.headers["content-type"]) } : {}),
+              ...(key ? { Authorization: `Bearer ${key}` } : {}),
+            },
+            body: hasBody ? (Readable.toWeb(req) as ReadableStream) : undefined,
+            ...(hasBody ? { duplex: "half" } : {}),
+          } as RequestInit);
+          res.statusCode = upstream.status;
+          res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "application/octet-stream");
+          res.end(Buffer.from(await upstream.arrayBuffer()));
         } catch (err) {
           res.writeHead(502, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
@@ -116,6 +142,26 @@ async function callAnthropic(cfg: { baseUrl: string; apiKey: string; model: stri
   return { content };
 }
 
+/** 运行时只接受本机同源请求：代理时把 Host/Origin 改写成运行时自身地址。 */
+function runtimeProxy(target: string) {
+  const rewrite = {
+    target,
+    changeOrigin: true,
+    configure: (proxy: { on: (event: string, fn: (req: { setHeader: (k: string, v: string) => void; getHeader: (k: string) => unknown }) => void) => void }) => {
+      proxy.on("proxyReq", (req) => {
+        if (req.getHeader("origin")) req.setHeader("origin", target);
+      });
+    },
+  };
+  return {
+    "/rt": { ...rewrite, rewrite: (path: string) => path.replace(/^\/rt/, "") },
+    "/scene": rewrite,
+    "/media/": rewrite,
+    "/font-400.woff2": rewrite,
+    "/font-600.woff2": rewrite,
+  };
+}
+
 export default defineConfig({
   plugins: [react(), modelProxy()],
   resolve: {
@@ -129,6 +175,7 @@ export default defineConfig({
     exclude: ["@cassie/editor-core", "@cassie/spec", "@cassie/harness", "@ffmpeg/ffmpeg", "@ffmpeg/util"],
   },
   server: {
+    proxy: runtimeProxy(process.env.CASSIE_RUNTIME ?? "http://127.0.0.1:4320"),
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",

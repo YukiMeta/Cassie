@@ -1,5 +1,5 @@
 import type { Intent } from "@cassie/harness";
-import type { TimeUs } from "@cassie/editor-core";
+import { usedAssets, type Project, type TimeUs } from "@cassie/editor-core";
 
 /**
  * 模型客户端 —— 全站唯一的模型访问入口。
@@ -17,6 +17,13 @@ export interface LlmConfig {
 export interface VisionConfig {
   enabled: boolean;
   /** SAM 3 提取服务地址（servers/sam3），实现 /extract 契约 */
+  baseUrl: string;
+  apiKey: string;
+}
+
+export interface RenderConfig {
+  enabled: boolean;
+  /** Cassie 渲染服务地址（servers/render），实现 /render + /jobs 契约 */
   baseUrl: string;
   apiKey: string;
 }
@@ -159,4 +166,49 @@ export async function visionExtract(cfg: VisionConfig, req: ExtractRequest): Pro
     throw new Error(`视觉提取失败 ${res.status}: ${text.slice(0, 300)}`);
   }
   return (await res.json()) as { candidates: ExtractedCandidate[] };
+}
+
+// ---------- 渲染服务 ----------
+
+function renderHeaders(cfg: RenderConfig): Record<string, string> {
+  return {
+    "X-Render-Base": cfg.baseUrl,
+    ...(cfg.apiKey ? { "X-Render-Key": cfg.apiKey } : {}),
+  };
+}
+
+export async function renderHealth(cfg: RenderConfig): Promise<void> {
+  const res = await fetch("/api/render/health", { headers: renderHeaders(cfg) });
+  if (!res.ok) throw new Error(`服务返回 ${res.status}`);
+}
+
+/** 上传项目与素材到渲染服务，轮询进度，返回成片 */
+export async function renderOnServer(
+  cfg: RenderConfig,
+  project: Project,
+  onProgress: (message: string, progress: number) => void,
+): Promise<Blob> {
+  const form = new FormData();
+  form.append("project", JSON.stringify(project));
+  for (const asset of usedAssets(project)) {
+    if (!asset.url) throw new Error(`素材「${asset.name}」未加载，无法上传`);
+    form.append(`asset:${asset.id}`, await (await fetch(asset.url)).blob(), asset.name);
+  }
+  onProgress("上传素材…", 0);
+  const res = await fetch("/api/render/render", { method: "POST", headers: renderHeaders(cfg), body: form });
+  if (!res.ok) throw new Error(`提交渲染失败 ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  const { jobId } = (await res.json()) as { jobId: string };
+
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const s = await fetch(`/api/render/jobs/${jobId}`, { headers: renderHeaders(cfg) });
+    if (!s.ok) throw new Error(`查询进度失败 ${s.status}`);
+    const job = (await s.json()) as { status: string; progress: number; message: string; error?: string };
+    if (job.status === "failed") throw new Error(job.error ?? "渲染失败");
+    if (job.status === "done") break;
+    onProgress(job.status === "queued" ? "排队中…" : "渲染中…", job.progress);
+  }
+  const out = await fetch(`/api/render/jobs/${jobId}/output`, { headers: renderHeaders(cfg) });
+  if (!out.ok) throw new Error(`下载成片失败 ${out.status}`);
+  return out.blob();
 }

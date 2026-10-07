@@ -13,12 +13,17 @@ import {
   useAppState,
 } from "../store";
 import { PanelGrip } from "./PanelGrip";
+import { RuntimeStage } from "./RuntimeStage";
 
 /**
  * 舞台：真实视频预览（video element 按播放头 seek）+ 文字叠加层 + 外观滤镜。
  * 支持缩放（按钮 + 滚轮）、安全框开关、吸附开关。
  */
 export function Stage() {
+  return useAppState().runtime ? <RuntimeStage /> : <LocalStage />;
+}
+
+function LocalStage() {
   const state = useAppState();
   const project = state.adapter.getProject();
   const videoRef = useRef<HTMLVideoElement | null>(null);

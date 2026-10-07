@@ -7,7 +7,7 @@ import {
   type EditTransaction,
 } from "./compile";
 import { parseIntent, resolveSubject, type Intent, type Scope } from "./intent";
-import { canAdvance, FLOW, type HarnessState } from "./states";
+import { FLOW, type HarnessState } from "./states";
 
 /**
  * Harness —— 后台真实事务执行器（不再是 UI 状态展示）。
@@ -137,6 +137,7 @@ export class Harness {
   /** 提交：VALIDATING → COMMITTING → COMMITTED；任何一步失败状态落 FAILED，项目不变 */
   commit(tx: EditTransaction): EditTransaction {
     if (tx.status !== "PLANNED") return this.fail(tx, `无法从 ${tx.status} 提交`, tx.status);
+    if (this.adapter.checkpoint() !== tx.baseRevision) return this.fail(tx, "项目已变更，请重新编译事务");
     this.advance(tx, "VALIDATING");
     const validation = validate(tx);
     tx.validation = validation;
@@ -145,6 +146,7 @@ export class Harness {
     try {
       const result = this.adapter.applyCommands(tx.commands);
       tx.committedRevision = result.project.revision;
+      tx.inverse = result.inverse;
     } catch (err) {
       return this.fail(tx, err instanceof Error ? err.message : String(err), "COMMITTING");
     }
@@ -152,14 +154,11 @@ export class Harness {
     return tx;
   }
 
-  /** 回滚：把项目状态退回到 baseRevision（通过 undo 逐步退） */
+  /** Apply this transaction's inverse only; revisions remain monotonic. */
   rollback(tx: EditTransaction): EditTransaction {
-    if (!canAdvance(tx.status)) return tx;
-    let guard = 0;
-    while (this.adapter.checkpoint() !== tx.baseRevision && this.adapter.canUndo() && guard < 100) {
-      this.adapter.undo();
-      guard++;
-    }
+    if (tx.status !== "COMMITTED" || !tx.inverse) return tx;
+    if (this.adapter.checkpoint() !== tx.committedRevision) throw new Error("回滚冲突：项目在提交后已变更");
+    this.adapter.applyCommands([tx.inverse]);
     this.advance(tx, "ROLLED_BACK");
     return tx;
   }
@@ -179,7 +178,7 @@ export class Harness {
     tx.error = message;
     this.advance(tx, "FAILED");
     tx.stateLog.push({ state: at, atUs: Date.now() });
-    this.transactions.push(tx);
+    if (!this.transactions.includes(tx)) this.transactions.push(tx);
     return tx;
   }
 }

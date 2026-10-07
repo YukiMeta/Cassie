@@ -5,3 +5,20 @@ dist/
 apps/web/public/fonts/ARIALUNI.ttf
 # OpenCut 参考实现（独立 clone，只读参考，不入库）
 reference/
+
+# Local native segmentation build and temporary frames
+.cassie-cache/
+.cassie-matte-*/
+
+# Runtime caches, review media, native tool builds
+.cassie-cache/
+.cassie-matte-*/
+.cassie-normalize/
+servers/render/smoke-out/
+*.pending
+# Local review projects and generated media live outside the repo; never commit
+review/
+**/replace-plan/
+**/renders/
+apps/client/
+servers/render/node_modules/
