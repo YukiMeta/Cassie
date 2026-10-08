@@ -162,11 +162,14 @@ export function initStore(): void {
     busy: null,
   };
   adapter.subscribe(() => emit());
-  void connectRuntime();
-
-  // 恢复自动保存：项目 + 语义层一起持久化（语义绑定依赖项目稳定 ID）
-  const raw = localStorage.getItem("cassie:autosave");
-  if (raw) {
+  // 运行时工程优先；连不上再恢复本地 autosave / 演示项目。
+  void connectRuntime().then((ok) => {
+    if (ok || state.booted) return;
+    const raw = localStorage.getItem("cassie:autosave");
+    if (!raw) {
+      emit();
+      return;
+    }
     try {
       const data = JSON.parse(raw) as { project: string; semantic: SemanticProject };
       adapter.load(data.project);
@@ -181,7 +184,8 @@ export function initStore(): void {
     } catch {
       localStorage.removeItem("cassie:autosave");
     }
-  }
+    emit();
+  });
   emit();
 }
 

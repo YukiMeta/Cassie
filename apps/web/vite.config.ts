@@ -142,17 +142,19 @@ async function callAnthropic(cfg: { baseUrl: string; apiKey: string; model: stri
   return { content };
 }
 
-/** 运行时只接受本机同源请求：代理时把 Host/Origin 改写成运行时自身地址。 */
+/** 运行时只接受本机同源请求：代理时改写 Origin，并补 CORP，避免 COEP 把 /scene iframe 挡掉。 */
 function runtimeProxy(target: string) {
-  const rewrite = {
-    target,
-    changeOrigin: true,
-    configure: (proxy: { on: (event: string, fn: (req: { setHeader: (k: string, v: string) => void; getHeader: (k: string) => unknown }) => void) => void }) => {
-      proxy.on("proxyReq", (req) => {
-        if (req.getHeader("origin")) req.setHeader("origin", target);
-      });
-    },
+  const wire = (proxy: { on: (event: string, fn: (...args: unknown[]) => void) => void }) => {
+    proxy.on("proxyReq", (...args) => {
+      const req = args[0] as { setHeader: (k: string, v: string) => void; getHeader: (k: string) => unknown };
+      if (req.getHeader("origin")) req.setHeader("origin", target);
+    });
+    proxy.on("proxyRes", (...args) => {
+      const proxyRes = args[0] as { headers: Record<string, string | string[] | undefined> };
+      proxyRes.headers["cross-origin-resource-policy"] = "same-origin";
+    });
   };
+  const rewrite = { target, changeOrigin: true, configure: wire };
   return {
     "/rt": { ...rewrite, rewrite: (path: string) => path.replace(/^\/rt/, "") },
     "/scene": rewrite,

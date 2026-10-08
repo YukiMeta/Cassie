@@ -5,6 +5,7 @@ import {
   detectAtPlayhead,
   selectEntity,
   selectRegion,
+  setToast,
   stageZoomFit,
   stageZoomIn,
   stageZoomOut,
@@ -43,6 +44,26 @@ export function RuntimeStage() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [width, height]);
+
+  // 用 srcdoc 而不是导航 iframe：父页有 COEP 时，跨代理导航会被挡成空白。
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(sceneUrl(revision))
+      .then((r) => {
+        if (!r.ok) throw new Error(`场景预览 ${r.status}`);
+        return r.text();
+      })
+      .then((html) => {
+        if (cancelled || !frameRef.current) return;
+        frameRef.current.srcdoc = html;
+      })
+      .catch((err) => {
+        if (!cancelled) setToast(String((err as Error).message ?? err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [revision]);
 
   const measure = useCallback(() => {
     const doc = frameRef.current?.contentDocument;
@@ -131,7 +152,6 @@ export function RuntimeStage() {
           <iframe
             ref={frameRef}
             title="Cassie 预览"
-            src={sceneUrl(revision)}
             sandbox="allow-scripts allow-same-origin"
             style={{ width, height, transform: `scale(${scale})` }}
             onLoad={() => void seek()}
