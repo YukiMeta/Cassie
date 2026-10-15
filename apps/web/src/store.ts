@@ -23,7 +23,7 @@ import {
 } from "@cassie/editor-core";
 import { Harness, parseIntent, type EditTransaction, type Intent, type Scope } from "@cassie/harness";
 import { llmParseIntent, type LlmConfig, type RenderConfig, type VisionConfig } from "./lib/model-client";
-import type { DocumentEdit, EntityId, EventDocument, EventWorkspace, ResolvedEvent, SemanticEntity, SemanticProject, SubjectRegion } from "@cassie/spec";
+import type { DocumentEdit, EntityId, EventDocument, EventWorkspace, ResolvedEvent, SemanticEntity, SemanticProject, SubjectRegion, Variant } from "@cassie/spec";
 import { projectToJson } from "@cassie/editor-core";
 import * as rt from "./lib/runtime";
 import type { DetectedObject } from "./lib/runtime";
@@ -68,6 +68,9 @@ export interface AppState {
   detection: { layerId: string; sourceFrame: number; objects: DetectedObject[] } | null;
   /** 运行时任务进行中的说明（识别、跟踪、渲染） */
   busy: string | null;
+  /** 舞台看母版，还是看同一母版派生的变体矩阵 */
+  stageView: "master" | "variants";
+  selectedVariantId: string | null;
 }
 
 export interface RuntimeState {
@@ -160,6 +163,8 @@ export function initStore(): void {
     selectedRegionId: null,
     detection: null,
     busy: null,
+    stageView: "master",
+    selectedVariantId: null,
   };
   adapter.subscribe(() => emit());
   // 运行时工程优先；连不上再恢复本地 autosave / 演示项目。
@@ -315,7 +320,26 @@ export async function reloadRuntime(): Promise<void> {
   state.harness.setSemantic(state.semantic);
   if (state.selectedRegionId && !document.regions?.[state.selectedRegionId]) state.selectedRegionId = null;
   if (state.selectedEntityId && !document.semantic.entities[state.selectedEntityId]) state.selectedEntityId = null;
+  if (state.selectedVariantId && !document.variants?.items[state.selectedVariantId]) state.selectedVariantId = null;
+  if (!document.variants) state.stageView = "master";
   emit();
+}
+
+export function setStageView(view: AppState["stageView"]): void {
+  state.stageView = view;
+  state.playing = false;
+  state.detection = null;
+  emit();
+}
+
+export function selectVariant(id: string | null): void {
+  state.selectedVariantId = id;
+  emit();
+}
+
+export function reviewVariant(variantId: string, review: Variant["review"], note?: string): Promise<unknown> {
+  const done = review === "approved" ? "已通过：这条变体可以交付" : review === "rejected" ? "已打回：原因记在变体上，下一版据此重做" : "已改回待审";
+  return runtimeEdit({ kind: "review-variant", variantId, review, ...(note ? { note } : {}) }, done);
 }
 
 async function runtimeTask<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {

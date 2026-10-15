@@ -14,6 +14,7 @@ import {
 } from "../store";
 import { sceneUrl } from "../lib/runtime";
 import { PanelGrip } from "./PanelGrip";
+import { StageViewSwitch } from "./VariantBoard";
 
 type SceneWindow = Window & { cassieSeek?: (time: number) => Promise<void> };
 interface Rect { id: string; left: number; top: number; width: number; height: number }
@@ -123,6 +124,7 @@ export function RuntimeStage() {
       <div className="stage-toolbar">
         <div className="tool-group">
           <PanelGrip panel="stage" />
+          <StageViewSwitch />
           <button className="tool-btn active" title="点击画面中的物体选中局部主体" onClick={() => selectRegion(null)}>
             ↖ 选择
           </button>

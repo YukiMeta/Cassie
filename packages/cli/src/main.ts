@@ -1,9 +1,9 @@
 import { readFile, access, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs } from "@cassie/harness";
 import type { RegionKey, DocumentEdit, ActionEdit, ActionPlan, EventWorkspace, GenerationReceipt } from "@cassie/spec";
-import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, type TrackRequest } from "@cassie/runtime";
+import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, type TrackRequest, type VariantImportOptions } from "@cassie/runtime";
 
 const help = `Cassie — semantic action/event workspace
 
@@ -20,6 +20,8 @@ const help = `Cassie — semantic action/event workspace
   cassie replace-plan <project.json> --entity <id> --reference <image> --instruction <text> --out <directory>
   cassie replace <project.json> --region <id> --candidate <video.mp4> --provider-name <name> --review <note> --instruction <text> [--pad 24] [--keys candidate-keys.json]
   cassie track <project.json> --track <track.json>     (layerId, regionId, entityId, name, keys:[{sourceFrame,box:[x,y,w,h]}], look)
+  cassie variants <project.json> --dir <takes/> --pattern "take-{market}-{aspect}-{location}.mp4" --provider-name <name> [--labels labels.json] [--brief <text>]
+  cassie variant-rows <project.json> --out <rows.json> [--output "renders/{market}_{aspect}_{location}.mp4"]
   cassie occurrences <project.json> --entity <entity-id>
   cassie plan <project.json> --edit <edit.json> --out <plan.json>
   cassie generate <plan.json> --provider <provider.json> --out <run.json>
@@ -36,7 +38,7 @@ JSON results go to stdout; errors have a code and a nonzero exit status.
 `;
 
 async function main() {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys"].map(k => [k, { type: "string" as const }])) });
+  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output"].map(k => [k, { type: "string" as const }])) });
   const [command, input] = positionals;
   if (!command || command === "help") { process.stdout.write(help); return; }
   if (!input || positionals.length > 2) throw new EventError("ARGUMENTS", "Expected a command and one input path. Run cassie help.");
@@ -71,6 +73,22 @@ async function main() {
     const ws=await updateWorkspace(file,async ws=>{if(ws.document.editor.revision!==base.document.editor.revision)throw new EventError("STALE_PLAN","Project changed while tracking; retry");return applyDocumentEdit(ws,planDocumentEdit(ws.document,edit))});
     const r=ws.document.regions![edit.region.id]!,event=resolveEvents(ws.document).find(e=>e.id===r.eventId)!;
     output({revision:ws.document.editor.revision,region:r.id,entity:r.entityId,timeline:[event.startFrame,event.endFrame],keys:r.keys.length,lowConfidenceFrames:r.confidence.filter((c,i)=>r.boxes[i]!.length&&c<0.3).length});return;
+  }
+  if (command === "variants") {
+    const labels = values.labels ? await read<{ axes?: Record<string, string>; values?: VariantImportOptions["labels"]; keep?: string[]; brief?: string }>(values.labels) : {};
+    const base = await readWorkspace(file);
+    const edits = await planVariantImport(base.document, dirname(file), resolve(option("dir")), { pattern: option("pattern"), provider: option("provider-name"), brief: values.brief ?? labels.brief, keep: labels.keep, labels: labels.values, axisLabels: labels.axes }, m => process.stderr.write(m + "\n"));
+    const ws = edits.length ? await updateWorkspace(file, async ws => { if (ws.document.editor.revision !== base.document.editor.revision) throw new EventError("STALE_PLAN", "Project changed while importing takes; retry"); return applyEdits(ws, edits); }) : base;
+    const items = Object.values(ws.document.variants!.items);
+    output({ revision: ws.document.editor.revision, transactions: edits.length, axes: ws.document.variants!.axes.map(a => ({ id: a.id, values: a.values.map(v => v.id) })), variants: items.length, withTake: items.filter(v => v.take).length });
+    return;
+  }
+  if (command === "variant-rows") {
+    const out = resolve(option("out")), rows = variantRows((await readWorkspace(file)).document, values.output);
+    await writeJson(out, { rows });
+    await writeJson(join(dirname(out), "manifest.json"), { project: file, createdAt: new Date().toISOString(), rows: rows.map(r => ({ id: r.id, output: r.output, status: r.take ? (r.review === "approved" ? "accepted" : "awaiting-review") : "missing-take" })) });
+    output({ rows: rows.length, out, missingTakes: rows.filter(r => !r.take).length });
+    return;
   }
   if (command === "occurrences") {
     const d=(await readWorkspace(file)).document,events=resolveEvents(d),id=option("entity"),entity=d.semantic.entities[id];

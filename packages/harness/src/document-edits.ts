@@ -95,6 +95,39 @@ export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): D
     }
     writes.add(layer.entityId);
     next.semantic.entities[layer.entityId]!.attributes[`layer:${layer.id}`] = { x: layer.x, y: layer.y, width: layer.width, height: layer.height, rotation: layer.rotation ?? 0 };
+  } else if (edit.kind === "set-variant-set") {
+    const s = edit.set;
+    if (!s || typeof s !== "object") throw new EventError("INVALID_VARIANTS", "Missing variant set");
+    next.variants = { masterAssetId: s.masterAssetId, keep: structuredClone(s.keep), brief: s.brief, axes: structuredClone(s.axes), items: next.variants?.items ?? {} };
+  } else if (edit.kind === "add-variants") {
+    if (!next.variants) throw new EventError("NO_VARIANTS", "Define the variant set before adding variants");
+    if (!Array.isArray(edit.items) || !edit.items.length) throw new EventError("INVALID_VARIANT", "No variants to add");
+    for (const item of edit.items) {
+      if (next.variants.items[item.id]) throw new EventError("DUPLICATE_VARIANT", item.id);
+      if (item.take) throw new EventError("INVALID_VARIANT", "Attach takes with attach-variant-take so their media is recorded");
+      next.variants.items[item.id] = { id: item.id, coords: structuredClone(item.coords), review: "pending", ...(item.brief ? { brief: item.brief } : {}) };
+    }
+  } else if (edit.kind === "remove-variants") {
+    if (!next.variants || !Array.isArray(edit.ids) || !edit.ids.length || edit.ids.some(id => !next.variants!.items[id])) throw new EventError("MISSING_VARIANT", "Unknown variant");
+    for (const id of edit.ids) delete next.variants.items[id];
+  } else if (edit.kind === "attach-variant-take") {
+    const v = next.variants?.items[edit.variantId], t = edit.take;
+    if (!v) throw new EventError("MISSING_VARIANT", edit.variantId);
+    if (!t || !edit.asset || !edit.media || edit.asset.id !== t.assetId || edit.asset.kind !== "video" || edit.media.sha256 !== t.sha256 || !t.provider?.trim()) throw new EventError("INVALID_TAKE", "A take needs its video asset, media and provider");
+    if (next.editor.assets[t.assetId] && next.media[t.assetId]?.sha256 !== t.sha256) throw new EventError("INVALID_TAKE", "Asset id already used by different media");
+    next.editor.assets[t.assetId] = structuredClone(edit.asset);
+    next.media[t.assetId] = structuredClone(edit.media);
+    v.take = structuredClone(t);
+    v.review = "pending";
+    delete v.note;
+  } else if (edit.kind === "review-variant") {
+    const v = next.variants?.items[edit.variantId];
+    if (!v) throw new EventError("MISSING_VARIANT", edit.variantId);
+    if (!["pending", "approved", "rejected"].includes(edit.review)) throw new EventError("INVALID_REVIEW", String(edit.review));
+    if (edit.review === "rejected" && !edit.note?.trim()) throw new EventError("INVALID_REVIEW", "Say what is wrong so the next take can fix it");
+    v.review = edit.review;
+    if (edit.note?.trim()) v.note = edit.note.trim(); else delete v.note;
+    if (edit.brief !== undefined) { if (edit.brief.trim()) v.brief = edit.brief.trim(); else delete v.brief; }
   } else throw new EventError("INVALID_EDIT", "Unsupported document edit");
   const after = resolveEvents(next);
   const changes = before.flatMap((b, i) => canonical(b) === canonical(after[i]) ? [] : [{ eventId: b.id, before: b, after: after[i]!, cause: edit.kind }]);
@@ -128,6 +161,20 @@ export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): D
   return { id: crypto.randomUUID(), status: "ready", baseRevision: document.editor.revision, base: structuredClone(document), edit: structuredClone(edit), changes, next };
 }
 
+function editDetail(edit: DocumentEdit): string {
+  switch (edit.kind) {
+    case "set-layer": return edit.layerId;
+    case "track-region": return edit.region.id;
+    case "set-region-look": case "set-region-replacement": return edit.regionId;
+    case "set-variant-set": return edit.set.masterAssetId;
+    case "add-variants": return edit.items.map(v => v.id).join(",");
+    case "remove-variants": return edit.ids.join(",");
+    case "attach-variant-take": return `${edit.variantId}:${edit.take.sha256}`;
+    case "review-variant": return `${edit.variantId}:${edit.review}`;
+    default: return edit.eventId;
+  }
+}
+
 export function applyDocumentEdit(workspace: EventWorkspace, plan: DocumentEditPlan): EventWorkspace {
   validateWorkspace(workspace);
   if (canonical(workspace.document) !== canonical(plan.base) || workspace.document.editor.revision !== plan.baseRevision) throw new EventError("STALE_PLAN", "Project changed after planning; retry the gesture");
@@ -138,7 +185,7 @@ export function applyDocumentEdit(workspace: EventWorkspace, plan: DocumentEditP
   result.document.editor.revision += 1;
   const revision = result.document.editor.revision;
   result.transactions.push({ id: plan.id, status: "committed", plan: structuredClone(plan), before: structuredClone(workspace.document), after: structuredClone(result.document), receipts: [], journal: [
-    { type: plan.edit.kind, revision, detail: plan.edit.kind === "set-layer" ? plan.edit.layerId : plan.edit.kind === "track-region" ? plan.edit.region.id : plan.edit.kind === "set-region-look" || plan.edit.kind === "set-region-replacement" ? plan.edit.regionId : plan.edit.eventId },
+    { type: plan.edit.kind, revision, detail: editDetail(plan.edit) },
     ...plan.changes.map(c => ({ type: "event.recomputed", revision, detail: c.eventId })),
     { type: "transaction.committed", revision, detail: plan.id },
   ] });

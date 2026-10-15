@@ -101,9 +101,62 @@ export function validateDocument(d: EventDocument): void {
     requireThat(!r.replacement || (d.editor.assets[r.replacement.assetId]?.kind === "video" && d.media[r.replacement.assetId]?.sha256 === r.replacement.sha256 && r.replacement.pad >= 0 && r.replacement.pad <= 400), "INVALID_REGION", `Region replacement media: ${id}`);
     requireThat(r.look && /^#[0-9a-f]{6}$/i.test(r.look.color) && r.look.tint >= 0 && r.look.tint <= 1 && r.look.feather >= 0 && r.look.feather <= 200, "INVALID_REGION", `Region look: ${id}`);
   }
+  if (d.variants) validateVariants(d);
   requireThat(/^#[0-9a-f]{6}$/i.test(d.scene.background), "INVALID_COLOR", "Scene background");
   for (const [id, ref] of Object.entries(d.media)) {
     requireThat(d.editor.assets[id] && ref && typeof ref.path === "string" && ref.path.length && !ref.path.startsWith("/") && !ref.path.includes("\\") && !ref.path.split("/").includes("..") && !/^[a-z]+:/i.test(ref.path) && /^[a-f0-9]{64}$/.test(ref.sha256), "INVALID_MEDIA", `Invalid portable media reference: ${id}`);
+  }
+}
+
+const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** `"9x16"` → 0.5625. Undefined for anything that is not `<w>x<h>`. */
+export function aspectRatio(aspect: string | undefined): number | undefined {
+  const m = aspect?.match(/^(\d+)x(\d+)$/);
+  return m && Number(m[1]) > 0 && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : undefined;
+}
+/** The aspect a variant must be delivered in, if any of its axis values pins one. */
+export function variantAspect(set: NonNullable<EventDocument["variants"]>, coords: Record<string, string>): string | undefined {
+  for (const axis of set.axes) {
+    const aspect = axis.values.find(v => v.id === coords[axis.id])?.attrs?.aspect;
+    if (aspect) return aspect;
+  }
+  return undefined;
+}
+export function variantKey(set: NonNullable<EventDocument["variants"]>, coords: Record<string, string>): string {
+  return set.axes.map(a => `${a.id}=${coords[a.id] ?? ""}`).join("&");
+}
+
+function validateVariants(d: EventDocument): void {
+  const set = d.variants!;
+  requireThat(set && d.editor.assets[set.masterAssetId]?.kind === "video" && d.media[set.masterAssetId], "INVALID_VARIANTS", "Variant master must be a video asset of this project");
+  requireThat(typeof set.brief === "string" && Array.isArray(set.keep) && set.keep.every(k => typeof k === "string") && Array.isArray(set.axes) && set.axes.length > 0 && set.items && typeof set.items === "object", "INVALID_VARIANTS", "Variant set needs a brief, keep list, axes and items");
+  const axisIds = new Set<string>();
+  for (const axis of set.axes) {
+    requireThat(SLUG.test(axis.id) && !axisIds.has(axis.id) && typeof axis.label === "string" && Array.isArray(axis.values) && axis.values.length > 0, "INVALID_VARIANTS", `Invalid axis: ${axis?.id}`);
+    axisIds.add(axis.id);
+    const valueIds = new Set<string>();
+    for (const v of axis.values) {
+      requireThat(SLUG.test(v.id) && !valueIds.has(v.id) && typeof v.label === "string" && (v.attrs === undefined || Object.values(v.attrs).every(x => typeof x === "string")), "INVALID_VARIANTS", `Invalid value ${axis.id}/${v?.id}`);
+      requireThat(v.attrs?.aspect === undefined || aspectRatio(v.attrs.aspect), "INVALID_VARIANTS", `Aspect must look like 16x9: ${axis.id}/${v.id}`);
+      valueIds.add(v.id);
+    }
+  }
+  const combos = new Set<string>();
+  for (const [id, item] of Object.entries(set.items)) {
+    requireThat(item && item.id === id && SLUG.test(id) && ["pending", "approved", "rejected"].includes(item.review), "INVALID_VARIANT", `Invalid variant: ${id}`);
+    requireThat(item.coords && Object.keys(item.coords).length === set.axes.length && set.axes.every(a => a.values.some(v => v.id === item.coords[a.id])), "INVALID_VARIANT", `Variant ${id} needs one known value on every axis`);
+    const key = variantKey(set, item.coords);
+    requireThat(!combos.has(key), "DUPLICATE_VARIANT", `Two variants share ${key}`);
+    combos.add(key);
+    requireThat(item.brief === undefined || typeof item.brief === "string", "INVALID_VARIANT", id);
+    requireThat(item.review !== "approved" || item.take, "INVALID_VARIANT", `Variant ${id} cannot be approved without a take`);
+    const t = item.take;
+    if (t) {
+      requireThat(d.editor.assets[t.assetId]?.kind === "video" && d.media[t.assetId]?.sha256 === t.sha256 && integer(t.width, 1) && integer(t.height, 1) && integer(t.durationUs, 1) && typeof t.provider === "string" && t.provider.trim(), "INVALID_VARIANT", `Variant ${id} take media`);
+      const want = aspectRatio(variantAspect(set, item.coords));
+      requireThat(!want || Math.abs(t.width / t.height - want) / want < 0.02, "VARIANT_ASPECT", `Variant ${id} take is ${t.width}x${t.height}, expected ${variantAspect(set, item.coords)}`);
+    }
   }
 }
 

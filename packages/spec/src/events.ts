@@ -115,6 +115,41 @@ export interface SubjectRegion {
     align?: { boxes: number[][]; fps: number; width: number; height: number; scale: number };
   };
 }
+/** One dimension a family of variants differs along: market, aspect ratio, location… */
+export interface VariantAxis {
+  id: string;
+  label: string;
+  /** `attrs` carries what the value means to a generator, e.g. `{ language: "日本語" }` or `{ aspect: "9x16" }`. */
+  values: { id: string; label: string; attrs?: Record<string, string> }[];
+}
+/** A rendered deliverable for one variant. Durations and canvas are its own, not the master's. */
+export interface VariantTake {
+  assetId: string;
+  sha256: string;
+  width: number;
+  height: number;
+  durationUs: number;
+  provider: string;
+}
+export interface Variant {
+  id: string;
+  /** Axis id → value id. Each combination exists at most once. */
+  coords: Record<string, string>;
+  /** Direction for this variant only, layered over the set's shared brief. */
+  brief?: string;
+  take?: VariantTake;
+  review: "pending" | "approved" | "rejected";
+  note?: string;
+}
+/** Everything derived from one original: what stays, what changes per axis, and each variant's take. */
+export interface VariantSet {
+  masterAssetId: string;
+  /** Story facts every variant must keep from the master (beats, product, call to action…). */
+  keep: string[];
+  brief: string;
+  axes: VariantAxis[];
+  items: Record<string, Variant>;
+}
 export interface EventDocument {
   editor: Project;
   semantic: SemanticProject;
@@ -125,6 +160,7 @@ export interface EventDocument {
   media: Record<string, MediaReference>;
   subjectMattes?: Record<string, SubjectMatte>;
   regions?: Record<string, SubjectRegion>;
+  variants?: VariantSet;
 }
 export interface ActionEdit {
   kind: "set-action-state";
@@ -140,7 +176,12 @@ export type DocumentEdit =
   | { kind: "set-region-replacement"; regionId: string; replacement: NonNullable<SubjectRegion["replacement"]> | null; asset?: MediaAsset; media?: MediaReference }
   | { kind: "set-region-look"; regionId: string; patch: Partial<SubjectRegion["look"]> }
   | { kind: "set-event-timing"; eventId: string; startFrame: number; durationFrames: number }
-  | { kind: "set-layer"; layerId: string; patch: Partial<Pick<VisualLayer, "x" | "y" | "width" | "height" | "rotation" | "color" | "text" | "tint">> };
+  | { kind: "set-layer"; layerId: string; patch: Partial<Pick<VisualLayer, "x" | "y" | "width" | "height" | "rotation" | "color" | "text" | "tint">> }
+  | { kind: "set-variant-set"; set: Omit<VariantSet, "items"> }
+  | { kind: "add-variants"; items: Variant[] }
+  | { kind: "remove-variants"; ids: string[] }
+  | { kind: "attach-variant-take"; variantId: string; take: VariantTake; asset: MediaAsset; media: MediaReference }
+  | { kind: "review-variant"; variantId: string; review: Variant["review"]; note?: string; brief?: string };
 export interface DocumentEditPlan {
   id: string;
   status: "ready";

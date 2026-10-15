@@ -1276,3 +1276,48 @@ body.resizing .app * { pointer-events: none; }
 .semantic-track.selected .track-label{color:#a58aff}
 .semantic-clip.dragable{cursor:grab}
 .semantic-clip.selected{outline:1px solid #a58aff}
+
+/* 变体矩阵：一个母版派生的全部变体 */
+.view-switch{display:inline-flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;margin-right:6px}
+.view-switch button{padding:4px 12px;font-size:12px;color:var(--muted)}
+.view-switch button.active{background:rgba(99,230,189,.12);color:var(--mint)}
+.variant-summary{font-size:12px;color:var(--muted);margin-left:6px}
+.variant-summary b.ok{color:var(--mint)} .variant-summary b.bad{color:var(--red)}
+.variant-board{min-width:0;overflow:hidden}
+.variant-board .stage-toolbar{flex-wrap:wrap;gap:6px}
+.variant-board .variant-body{flex:1;min-height:0;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,34%);gap:12px;padding:12px}
+.variant-grid{display:grid;gap:6px;align-content:start;overflow:auto;min-height:0;padding-right:4px}
+.variant-corner,.variant-col{position:sticky;top:0;z-index:1;background:var(--surface);font-size:11px;color:var(--dim);padding:4px 2px;letter-spacing:.04em}
+.variant-col{text-align:center;color:var(--muted)}
+.variant-row{display:flex;flex-direction:column;justify-content:center;font-size:12px;color:var(--muted);line-height:1.35}
+.variant-row .primary{color:var(--text);font-weight:600}
+.variant-row em,.variant-coords em{font-style:normal;color:var(--dim);margin-left:6px;font-weight:400}
+.variant-cell{position:relative;display:flex;align-items:center;justify-content:center;height:84px;border-radius:8px;border:1px solid var(--line);background:#06070b;overflow:hidden;cursor:pointer}
+.variant-cell.empty{border-style:dashed;cursor:default;background:transparent}
+.variant-cell.empty.filtered{opacity:.35}
+.variant-cell video{max-width:100%;max-height:100%;display:block}
+.variant-cell:hover{border-color:var(--line-strong)}
+.variant-cell.selected{border-color:var(--mint);box-shadow:0 0 0 1px var(--mint)}
+.variant-dot{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--amber)}
+.variant-cell.approved .variant-dot{background:var(--mint)}
+.variant-cell.rejected .variant-dot{background:var(--red)}
+.variant-missing{font-size:11px;color:var(--dim)}
+.variant-missing.big{display:flex;align-items:center;justify-content:center;aspect-ratio:16/9;border:1px dashed var(--line-strong);border-radius:8px}
+.variant-detail{min-height:0;min-width:0;overflow:auto;border-left:1px solid var(--line);padding-left:12px}
+.variant-detail h4{font-size:11px;color:var(--dim);font-weight:500;margin:14px 0 6px;letter-spacing:.04em}
+.variant-detail ul{padding-left:16px;color:var(--muted);font-size:12px}
+.variant-empty p{color:var(--muted);font-size:12px}
+.variant-brief{white-space:pre-wrap;font-size:12px;color:var(--muted);line-height:1.6}
+.variant-coords{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.variant-coords span{display:flex;flex-direction:column;font-size:13px}
+.variant-coords small{font-size:10px;color:var(--dim)}
+.variant-status{margin-left:auto;padding:2px 10px;border-radius:20px;font-size:11px!important;flex-direction:row!important;background:rgba(247,199,108,.12);color:var(--amber)}
+.variant-status.approved{background:rgba(99,230,189,.12);color:var(--mint)}
+.variant-status.rejected{background:rgba(255,107,122,.12);color:var(--red)}
+.variant-compare{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;align-items:end}
+.variant-compare video{width:100%;max-height:240px;object-fit:contain;border-radius:8px;background:#000;display:block}
+.variant-compare figcaption{font-size:10px;color:var(--dim);margin-top:4px}
+.variant-detail textarea{width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:8px;font:inherit;font-size:12px;resize:vertical}
+.variant-actions{display:flex;gap:8px;margin-top:8px}
+.danger-btn{padding:6px 14px;border-radius:8px;border:1px solid rgba(255,107,122,.4);color:var(--red)}
+.danger-btn:disabled,.primary-btn:disabled{opacity:.4;cursor:not-allowed}
