@@ -1,6 +1,6 @@
 import { dryRun, findClip, type EditorCommand } from "@cassie/editor-core";
 import type { DocumentEdit, DocumentEditPlan, EventDocument, EventWorkspace } from "@cassie/spec";
-import { canonical, EventError, frameToUs, resolveEvents, resolveFrameCount, validateWorkspace } from "./events";
+import { canonical, EventError, frameToUs, recordTransaction, resolveEvents, resolveFrameCount, validateWorkspace } from "./events";
 
 /** Gesture writeback preserves event references. Only the local offset/duration is edited. */
 export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): DocumentEditPlan {
@@ -184,10 +184,9 @@ export function applyDocumentEdit(workspace: EventWorkspace, plan: DocumentEditP
   result.document = fresh.next;
   result.document.editor.revision += 1;
   const revision = result.document.editor.revision;
-  result.transactions.push({ id: plan.id, status: "committed", plan: structuredClone(plan), before: structuredClone(workspace.document), after: structuredClone(result.document), receipts: [], journal: [
+  return recordTransaction(result, workspace.document, { id: plan.id, edit: plan.edit, baseRevision: plan.baseRevision, changes: plan.changes, receipts: [] }, [
     { type: plan.edit.kind, revision, detail: editDetail(plan.edit) },
     ...plan.changes.map(c => ({ type: "event.recomputed", revision, detail: c.eventId })),
     { type: "transaction.committed", revision, detail: plan.id },
-  ] });
-  return result;
+  ]);
 }

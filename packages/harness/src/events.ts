@@ -1,5 +1,6 @@
 import { assertProjectValid, dryRun, findClip, type EditorCommand } from "@cassie/editor-core";
-import type { ActionEdit, ActionPlan, EventDocument, EventWorkspace, GenerationReceipt, GenerationTask, ResolvedEvent } from "@cassie/spec";
+import type { ActionEdit, ActionPlan, EventChange, EventDocument, EventTransaction, EventWorkspace, GenerationReceipt, GenerationTask, ResolvedEvent } from "@cassie/spec";
+import { applyPatch, diff, digest } from "./patch";
 
 export class EventError extends Error {
   constructor(public code: string, message: string) { super(message); this.name = "EventError"; }
@@ -312,12 +313,22 @@ export function applyAction(workspace: EventWorkspace, plan: ActionPlan, receipt
     if (active.length) entity.lifecycle = { enterUs: frameToUs(d, Math.min(...active.map(e => e.startFrame))), exitUs: frameToUs(d, Math.max(...active.map(e => e.endFrame))) };
   }
   validateDocument(d);
-  next.transactions.push({ id: plan.id, status: "committed", plan: structuredClone(plan), before: structuredClone(workspace.document), after: structuredClone(d), receipts: structuredClone(receipts), journal: [
+  return recordTransaction(next, workspace.document, { id: plan.id, edit: plan.edit, baseRevision: plan.baseRevision, changes: plan.changes, tasks: plan.tasks, receipts }, [
     { type: "action.requested", revision: plan.baseRevision, detail: `${plan.edit.eventId} -> ${plan.edit.state}` },
     ...plan.changes.map(c => ({ type: "event.recomputed", revision: d.editor.revision, detail: c.eventId })),
     ...receipts.map(r => ({ type: "media.accepted", revision: d.editor.revision, detail: `${r.taskId}:${r.media.sha256}` })),
     { type: "transaction.committed", revision: d.editor.revision, detail: plan.id },
-  ] });
+  ]);
+}
+
+const unrevised = (d: EventDocument) => ({ ...d, editor: { ...d.editor, revision: 0 } });
+
+/** Appends one committed transaction to `next` (whose document is already the result) as patches. */
+export function recordTransaction(next: EventWorkspace, before: EventDocument, meta: Pick<EventTransaction, "id" | "edit" | "baseRevision" | "changes" | "tasks" | "receipts">, journal: EventTransaction["journal"]): EventWorkspace {
+  const a = unrevised(before), b = unrevised(next.document);
+  next.transactions.push({ id: meta.id, status: "committed", edit: structuredClone(meta.edit), baseRevision: meta.baseRevision, changes: structuredClone(meta.changes),
+    ...(meta.tasks?.length ? { tasks: structuredClone(meta.tasks) } : {}),
+    patch: diff(a, b), inverse: diff(b, a), afterDigest: digest(b), receipts: structuredClone(meta.receipts), journal });
   return next;
 }
 
@@ -326,11 +337,11 @@ export function rollbackAction(workspace: EventWorkspace, transactionId: string)
   validateWorkspace(workspace);
   const tx = workspace.transactions.find(t => t.id === transactionId);
   requireThat(tx?.status === "committed", "NOT_COMMITTED", "Transaction is absent or already rolled back");
-  const current = { ...workspace.document, editor: { ...workspace.document.editor, revision: tx.after.editor.revision } };
-  requireThat(canonical(current) === canonical(tx.after), "ROLLBACK_CONFLICT", "Later content exists; roll it back first");
+  requireThat(digest(unrevised(workspace.document)) === tx.afterDigest, "ROLLBACK_CONFLICT", "Later content exists; roll it back first");
   const next = structuredClone(workspace);
-  next.document = structuredClone(tx.before);
+  next.document = applyPatch(unrevised(workspace.document), tx.inverse);
   next.document.editor.revision = workspace.document.editor.revision + 1;
+  validateDocument(next.document);
   const record = next.transactions.find(t => t.id === transactionId)!;
   record.status = "rolled-back";
   record.journal.push({ type: "transaction.rolled-back", revision: next.document.editor.revision, detail: transactionId });
@@ -342,11 +353,23 @@ export function validateWorkspace(workspace: EventWorkspace): void {
   resolveEvents(workspace.document);
   const ids = new Set<string>();
   for (const tx of workspace.transactions) {
-    requireThat(tx && typeof tx.id === "string" && !ids.has(tx.id) && ["committed", "rolled-back"].includes(tx.status) && Array.isArray(tx.journal), "INVALID_HISTORY", "Invalid transaction history");
-    ids.add(tx.id); validateDocument(tx.before); validateDocument(tx.after);
+    requireThat(tx && typeof tx.id === "string" && !ids.has(tx.id) && ["committed", "rolled-back"].includes(tx.status) && Array.isArray(tx.journal) && tx.edit && Array.isArray(tx.patch) && Array.isArray(tx.inverse) && typeof tx.afterDigest === "string", "INVALID_HISTORY", "Invalid transaction history");
+    ids.add(tx.id);
   }
 }
+
+type LegacyTransaction = EventTransaction & { plan?: { edit: EventTransaction["edit"]; baseRevision: number; changes: EventChange[]; tasks?: GenerationTask[] }; before?: EventDocument; after?: EventDocument };
+/** Files written before history became patches carry full before/after documents; convert them on read. */
+function migrateHistory(workspace: EventWorkspace): EventWorkspace {
+  workspace.transactions = (workspace.transactions as LegacyTransaction[]).map(tx => {
+    if (!tx.before || !tx.after || !tx.plan) return tx;
+    const a = unrevised(tx.before), b = unrevised(tx.after);
+    return { id: tx.id, status: tx.status, edit: tx.plan.edit, baseRevision: tx.plan.baseRevision, changes: tx.plan.changes, ...(tx.plan.tasks?.length ? { tasks: tx.plan.tasks } : {}),
+      patch: diff(a, b), inverse: diff(b, a), afterDigest: digest(b), receipts: tx.receipts ?? [], journal: tx.journal };
+  });
+  return workspace;
+}
 export function parseWorkspace(json: string): EventWorkspace {
-  const parsed = JSON.parse(json) as EventWorkspace;
+  const parsed = migrateHistory(JSON.parse(json) as EventWorkspace);
   validateWorkspace(parsed); return parsed;
 }

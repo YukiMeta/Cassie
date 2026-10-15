@@ -238,12 +238,21 @@ export interface ActionPlan {
   changes: EventChange[];
   tasks: GenerationTask[];
 }
+export type PatchOp =
+  | { op: "set"; path: (string | number)[]; value: unknown }
+  | { op: "del"; path: (string | number)[] };
+/** History stores what changed, never whole documents. Revision is excluded from both patches. */
 export interface EventTransaction {
   id: string;
   status: "committed" | "rolled-back";
-  plan: ActionPlan | DocumentEditPlan;
-  before: EventDocument;
-  after: EventDocument;
+  edit: ActionEdit | DocumentEdit;
+  baseRevision: number;
+  changes: EventChange[];
+  tasks?: GenerationTask[];
+  patch: PatchOp[];
+  inverse: PatchOp[];
+  /** Digest of the committed document, so rollback can tell whether later content exists. */
+  afterDigest: string;
   receipts: GenerationReceipt[];
   journal: { type: string; revision: number; detail: string }[];
 }
