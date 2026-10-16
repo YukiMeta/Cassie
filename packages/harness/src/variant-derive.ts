@@ -58,6 +58,7 @@ export function variantDocument(d: EventDocument, variantId: string): EventDocum
   for (const layer of master.scene.layers) delete layer.bind;
   delete master.variables;
   delete master.variants;
+  delete master.subjectRefs;
   if (!v.take) return { ...master, editor: { ...master.editor, name: `${d.editor.name} · ${variantId}` } };
 
   const t = v.take, fps = d.frameRate.num / d.frameRate.den;

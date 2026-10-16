@@ -91,6 +91,7 @@ describe('variants follow the master', () => {
     expect(subjectRefsFor(ws.document, ws.document.variants!.items['kr-9x16']!).host!.sha256).toBe(sha(103));
     expect(subjectRefsFor(ws.document, ws.document.variants!.items['jp-9x16']!).host!.sha256).toBe(sha(104));
     expect(() => applyEdits(ws, [ref(5, { market: 'fr' })])).toThrow();
+    expect(() => variantDocument(ws.document, 'kr-9x16')).not.toThrow();
   });
 });
 

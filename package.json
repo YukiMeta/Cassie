@@ -13,7 +13,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "cassie": "node --import tsx packages/cli/src/main.ts",
     "test:integration": "node --import tsx scripts/integration.mts",
-    "build:client": "node scripts/build-client.mjs"
+    "build:client": "node scripts/build-client.mjs",
+    "test:e2e": "node --import tsx scripts/e2e.mts"
   },
   "devDependencies": {
     "@types/node": "26.6.4",
