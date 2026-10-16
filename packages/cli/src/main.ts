@@ -1,9 +1,9 @@
 import { readFile, access, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs } from "@cassie/harness";
+import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs, staleSubjects, variantDocument } from "@cassie/harness";
 import type { RegionKey, DocumentEdit, ActionEdit, ActionPlan, EventWorkspace, GenerationReceipt } from "@cassie/spec";
-import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, type TrackRequest, type VariantImportOptions } from "@cassie/runtime";
+import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, type TrackRequest, type VariantImportOptions } from "@cassie/runtime";
 
 const help = `Cassie — semantic action/event workspace
 
@@ -22,6 +22,9 @@ const help = `Cassie — semantic action/event workspace
   cassie track <project.json> --track <track.json>     (layerId, regionId, entityId, name, keys:[{sourceFrame,box:[x,y,w,h]}], look)
   cassie variants <project.json> --dir <takes/> --pattern "take-{market}-{aspect}-{location}.mp4" --provider-name <name> [--labels labels.json] [--brief <text>]
   cassie variant-rows <project.json> --out <rows.json> [--output "renders/{market}_{aspect}_{location}.mp4"]
+  cassie subject-ref <project.json> --entity <id> --reference <image> --prompt <SAM 3 concept> --instruction <text> [--name <label>] [--scope axis=value,...]
+  cassie subject-sync <project.json> --variant <id|stale> --out <directory> [--provider <provider.json> | --candidate <video.mp4> --provider-name <name>]
+  (text, captions and end cards follow the master through variables: cassie edit with set-variable / add-overlay-text / set-variant-values)
   cassie occurrences <project.json> --entity <entity-id>
   cassie plan <project.json> --edit <edit.json> --out <plan.json>
   cassie generate <plan.json> --provider <provider.json> --out <run.json>
@@ -29,7 +32,7 @@ const help = `Cassie — semantic action/event workspace
   cassie apply <project.json> --plan <plan.json> [--receipt <receipt.json>]
   cassie rollback <project.json> --transaction <id>
   cassie scene <project.json> --out <directory>
-  cassie render <project.json> --out <video.mp4>
+  cassie render <project.json> --out <video.mp4> [--variant <id>]
   cassie serve <project.json> [--port 4317]
 
 Plans never mutate projects. Video edits cannot commit without reviewed media.
@@ -38,7 +41,7 @@ JSON results go to stdout; errors have a code and a nonzero exit status.
 `;
 
 async function main() {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output"].map(k => [k, { type: "string" as const }])) });
+  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output", "variant", "prompt", "name", "scope"].map(k => [k, { type: "string" as const }])) });
   const [command, input] = positionals;
   if (!command || command === "help") { process.stdout.write(help); return; }
   if (!input || positionals.length > 2) throw new EventError("ARGUMENTS", "Expected a command and one input path. Run cassie help.");
@@ -88,6 +91,28 @@ async function main() {
     await writeJson(out, { rows });
     await writeJson(join(dirname(out), "manifest.json"), { project: file, createdAt: new Date().toISOString(), rows: rows.map(r => ({ id: r.id, output: r.output, status: r.take ? (r.review === "approved" ? "accepted" : "awaiting-review") : "missing-take" })) });
     output({ rows: rows.length, out, missingTakes: rows.filter(r => !r.take).length });
+    return;
+  }
+  if (command === "subject-ref") {
+    const edit = await importSubjectReference(dirname(file), resolve(option("reference")), option("entity"), option("prompt"), option("instruction"), values.name, values.scope ? Object.fromEntries(String(values.scope).split(",").map(p => p.split("=") as [string, string])) : undefined);
+    const ws = await updateWorkspace(file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
+    const items = Object.values(ws.document.variants?.items ?? {});
+    output({ revision: ws.document.editor.revision, entity: edit.entityId, staleVariants: items.filter(v => staleSubjects(ws.document, v).includes(edit.entityId)).map(v => v.id) });
+    return;
+  }
+  if (command === "subject-sync") {
+    const d = (await readWorkspace(file)).document, which = option("variant"), out = resolve(option("out"));
+    const ids = which === "stale" ? Object.values(d.variants?.items ?? {}).filter(v => staleSubjects(d, v).length).map(v => v.id) : [which];
+    if (values.candidate && ids.length !== 1) throw new EventError("ARGUMENTS", "--candidate syncs exactly one variant");
+    const results = [];
+    for (const id of ids) {
+      const request = await planSubjectSync(d, dirname(file), id, join(out, id));
+      if (!values.provider && !values.candidate) { results.push({ variant: id, status: "planned", request: join(out, id, "request.json") }); continue; }
+      const edit = values.candidate ? await attachSyncedTake(d, dirname(file), id, resolve(values.candidate), option("provider-name"), request.subjects.map(s => s.entityId)) : await runSubjectSync(d, dirname(file), request, await read(values.provider!));
+      const ws = await updateWorkspace(file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
+      results.push({ variant: id, status: "synced", revision: ws.document.editor.revision });
+    }
+    output({ variants: results });
     return;
   }
   if (command === "occurrences") {
@@ -147,7 +172,7 @@ async function main() {
   }
   if (command === "rollback") { const ws = await updateWorkspace(file, ws => rollbackAction(ws, option("transaction"))); output({ revision: ws.document.editor.revision, events: resolveEvents(ws.document) }); return; }
   if (command === "scene") { const ws = await readWorkspace(file); await stageScene(ws.document, dirname(file), resolve(option("out"))); output({ html: resolve(option("out"), "index.html") }); return; }
-  if (command === "render") { const ws = await readWorkspace(file); await renderVideo(ws.document, dirname(file), option("out"), m => process.stderr.write(m + "\n")); output({ output: resolve(option("out")), revision: ws.document.editor.revision }); return; }
+  if (command === "render") { const ws = await readWorkspace(file); await renderVideo(values.variant ? variantDocument(ws.document, values.variant) : ws.document, dirname(file), option("out"), m => process.stderr.write(m + "\n")); output({ output: resolve(option("out")), revision: ws.document.editor.revision }); return; }
   if (command === "serve") {
     const port = values.port === undefined ? 4317 : Number(values.port);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new EventError("PORT", "Invalid port");

@@ -60,8 +60,24 @@ export function claimRegion(revision: number, layerId: string, sourceFrame: numb
   return call<EventWorkspace>("/api/region", { revision, layerId, sourceFrame, box, label, ...(entityId ? { entityId } : {}) });
 }
 
-export async function renderJob(onProgress: (message: string) => void): Promise<string> {
-  const { id } = await call<{ id: string }>("/api/render", {});
+export function uploadSubjectReference(revision: number, body: { entityId: string; name?: string; scope?: Record<string, string>; prompt: string; instruction: string; image: string }) {
+  return call<EventWorkspace>("/api/subject-reference", { revision, ...body });
+}
+
+/** Starts a SAM 3 subject sync for one variant; without a configured provider it only writes the task. */
+export async function subjectSync(variantId: string, onProgress: (message: string) => void): Promise<string> {
+  const { id, provider } = await call<{ id: string; provider: string | null }>("/api/subject-sync", { variantId });
+  for (;;) {
+    const job = await call<{ status: string; message: string }>(`/api/render/${id}`);
+    onProgress(job.message);
+    if (job.status === "failed") throw new Error(job.message);
+    if (job.status === "complete" || !provider) return job.message;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+export async function renderJob(onProgress: (message: string) => void, variantId?: string): Promise<string> {
+  const { id } = await call<{ id: string }>("/api/render", variantId ? { variantId } : {});
   for (;;) {
     await new Promise((r) => setTimeout(r, 800));
     const job = await call<{ status: string; message: string }>(`/api/render/${id}`);

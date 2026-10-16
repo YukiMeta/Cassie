@@ -1,6 +1,6 @@
 import { dryRun, findClip, type EditorCommand } from "@cassie/editor-core";
 import type { DocumentEdit, DocumentEditPlan, EventDocument, EventWorkspace } from "@cassie/spec";
-import { canonical, EventError, frameToUs, recordTransaction, resolveEvents, resolveFrameCount, validateWorkspace } from "./events";
+import { canonical, EventError, frameToUs, recordTransaction, resolveEvents, resolveFrameCount, subjectRefKey, validateWorkspace } from "./events";
 
 /** Gesture writeback preserves event references. Only the local offset/duration is edited. */
 export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): DocumentEditPlan {
@@ -128,6 +128,53 @@ export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): D
     v.review = edit.review;
     if (edit.note?.trim()) v.note = edit.note.trim(); else delete v.note;
     if (edit.brief !== undefined) { if (edit.brief.trim()) v.brief = edit.brief.trim(); else delete v.brief; }
+  } else if (edit.kind === "set-variable") {
+    const v = edit.variable;
+    if (!v || !/^[a-z][a-zA-Z0-9_]{0,39}$/.test(v.id) || !["text", "color"].includes(v.type) || typeof v.label !== "string" || typeof v.default !== "string") throw new EventError("INVALID_VARIABLE", "Variable needs an id, label, text/color type and a default");
+    if (v.type === "color" && !/^#[0-9a-f]{6}$/i.test(v.default)) throw new EventError("INVALID_VARIABLE", "Color variables default to #rrggbb");
+    next.variables = { ...next.variables, [v.id]: structuredClone(v) };
+  } else if (edit.kind === "add-overlay-text") {
+    const { width, height } = next.editor.settings, b = edit.box, id = edit.layerId;
+    if (!/^[a-z0-9-]{1,40}$/.test(id ?? "") || next.scene.layers.some(l => l.id === id) || next.events.some(e => e.id === `overlay-${id}`)) throw new EventError("INVALID_OVERLAY", "Overlay needs a new layer id");
+    if (!b || ![b.x, b.y, b.width, b.height].every(n => Number.isFinite(n) && n >= 0 && n <= 1) || b.width <= 0 || b.height <= 0 || b.x + b.width > 1 || b.y + b.height > 1) throw new EventError("INVALID_OVERLAY", "Box is a 0..1 fraction inside the canvas");
+    if (!Number.isSafeInteger(edit.startFrame) || edit.startFrame < 0 || !Number.isSafeInteger(edit.durationFrames) || edit.durationFrames < 1) throw new EventError("INVALID_TIMING", "Overlay timing is whole frames");
+    if (edit.bind ? !next.variables?.[edit.bind] || next.variables[edit.bind]!.type !== "text" : !edit.text?.trim()) throw new EventError("INVALID_OVERLAY", "Overlay shows fixed text or binds a text variable");
+    const entityId = `overlay-${id}`, text = edit.bind ? next.variables![edit.bind]!.default : edit.text!;
+    next.semantic.entities[entityId] = { id: entityId, name: edit.label || id, kind: "text", lifecycle: { enterUs: 0, exitUs: 0 }, attributes: { overlay: true, anchor: edit.anchor === "end" ? "end" : "start" }, binds: [], locked: false };
+    next.events.push({ id: entityId, entityId, kind: "caption", label: edit.label || id, start: { frame: edit.startFrame }, durationFrames: edit.durationFrames, text });
+    next.scene.layers.push({ id, entityId, kind: "text", eventId: entityId, x: Math.round(b.x * width), y: Math.round(b.y * height), width: Math.round(b.width * width), height: Math.round(b.height * height), color: edit.color, text, ...(edit.bind ? { bind: { text: edit.bind } } : {}) });
+    writes.add(entityId);
+  } else if (edit.kind === "set-variant-values") {
+    const v = next.variants?.items[edit.variantId];
+    if (!v) throw new EventError("MISSING_VARIANT", edit.variantId);
+    const values = { ...v.values };
+    for (const [key, value] of Object.entries(edit.values ?? {})) {
+      const def = next.variables?.[key];
+      if (!def || typeof value !== "string") throw new EventError("INVALID_VALUE", `Unknown variable: ${key}`);
+      if (def.type === "color" && value && !/^#[0-9a-f]{6}$/i.test(value)) throw new EventError("INVALID_VALUE", `${key} is a #rrggbb color`);
+      if (value) values[key] = value; else delete values[key];
+    }
+    if (Object.keys(values).length) v.values = values; else delete v.values;
+  } else if (edit.kind === "set-subject-reference") {
+    const id = edit.entityId;
+    if (!/^[a-z0-9-]{1,64}$/.test(id ?? "")) throw new EventError("INVALID_REFERENCE", "Subject id");
+    if (!next.semantic.entities[id]) {
+      if (!edit.name?.trim()) throw new EventError("MISSING_ENTITY", "Name the new subject");
+      next.semantic.entities[id] = { id, name: edit.name.trim(), kind: "subject", lifecycle: { enterUs: 0, exitUs: 0 }, attributes: { regions: [] }, binds: [], locked: false };
+    } else if (next.semantic.entities[id]!.kind !== "subject") throw new EventError("INVALID_REFERENCE", "Only subjects take a reference image");
+    const key = subjectRefKey(id, edit.reference?.scope ?? edit.scope);
+    if (edit.reference === null) {
+      if (!next.subjectRefs?.[key]) throw new EventError("NO_CHANGE", "Subject has no reference in this scope");
+      delete next.subjectRefs[key];
+    } else {
+      const r = edit.reference;
+      if (r?.scope && !Object.keys(r.scope).length) delete r.scope;
+      if (!r || r.entityId !== id || !edit.asset || !edit.media || edit.asset.kind !== "image" || edit.asset.id !== r.assetId || edit.media.sha256 !== r.sha256 || !r.prompt?.trim()) throw new EventError("INVALID_REFERENCE", "Reference needs its image asset and a concept prompt to segment the subject");
+      next.editor.assets[r.assetId] = structuredClone(edit.asset);
+      next.media[r.assetId] = structuredClone(edit.media);
+      next.subjectRefs = { ...next.subjectRefs, [key]: structuredClone(r) };
+    }
+    writes.add(id);
   } else throw new EventError("INVALID_EDIT", "Unsupported document edit");
   const after = resolveEvents(next);
   const changes = before.flatMap((b, i) => canonical(b) === canonical(after[i]) ? [] : [{ eventId: b.id, before: b, after: after[i]!, cause: edit.kind }]);
@@ -171,6 +218,10 @@ function editDetail(edit: DocumentEdit): string {
     case "remove-variants": return edit.ids.join(",");
     case "attach-variant-take": return `${edit.variantId}:${edit.take.sha256}`;
     case "review-variant": return `${edit.variantId}:${edit.review}`;
+    case "set-variable": return edit.variable.id;
+    case "add-overlay-text": return edit.layerId;
+    case "set-variant-values": return edit.variantId;
+    case "set-subject-reference": return `${subjectRefKey(edit.entityId, edit.reference?.scope ?? edit.scope)}:${edit.reference?.sha256 ?? "cleared"}`;
     default: return edit.eventId;
   }
 }

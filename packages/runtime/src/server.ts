@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, EventError } from "@cassie/harness";
+import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, variantDocument, EventError } from "@cassie/harness";
+import type { EventDocument } from "@cassie/spec";
+import { importSubjectReference, planSubjectSync, runSubjectSync } from "./subject-sync";
 import { readWorkspace, updateWorkspace } from "./store";
 import { compileScene, renderVideo, fontPath } from "./render";
 import { extractSubjectMatte, verifyMatteEdit, exportSubjectCutout } from "./matte";
@@ -30,9 +32,10 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
         if (path === "/api/project") { const workspace = await readWorkspace(file); send(res, { workspace, events: resolveEvents(workspace.document), token }); return; }
         if (path === "/font-400.woff2" || path === "/font-600.woff2") { res.setHeader("Content-Type", "font/woff2"); res.end(await readFile(fontPath(path.includes("400") ? 400 : 600))); return; }
         if (path === "/scene") {
-          const d = (await readWorkspace(file)).document;
+          const d = (await readWorkspace(file)).document, variant = requestUrl.searchParams.get("variant");
           res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.end(compileScene(d, Object.fromEntries(Object.keys(d.media).map(id => [id, `/media/${encodeURIComponent(id)}`])),requestUrl.searchParams.get("matte")??undefined)); return;
+          if (variant) { const vd = variantDocument(d, variant); res.end(compileScene(vd, sceneUrls(d, vd))); return; }
+          res.end(compileScene(d, sceneUrls(d, d),requestUrl.searchParams.get("matte")??undefined)); return;
         }
         if (path.startsWith("/media/")) {
           const ref = (await readWorkspace(file)).document.media[decodeURIComponent(path.slice(7))];
@@ -81,9 +84,38 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
         const edit = await trackRegion(base.document, dirname(file), { layerId: String(body.layerId), regionId: `${slug}-${Date.now().toString(36)}`, entityId: String(body.entityId || `obj-${slug}`), name: label, keys: [{ sourceFrame: Number(body.sourceFrame), box }] });
         send(res, await updateWorkspace(file, async ws => { if (ws.document.editor.revision !== base.document.editor.revision) throw new EventError("STALE_PLAN", "Project changed during tracking"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)); })); return;
       }
+      if (path === "/api/subject-reference") {
+        const base = await readWorkspace(file);
+        if (base.document.editor.revision !== body.revision) throw new EventError("STALE_PLAN", "Refresh before changing the subject");
+        const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(body.image ?? ""));
+        if (!m) throw new EventError("INVALID_REFERENCE", "Upload a png, jpg or webp reference image");
+        const scratch = join(dirname(file), ".cassie-upload", `${crypto.randomUUID()}.${m[1] === "jpeg" ? "jpg" : m[1]}`);
+        await mkdir(dirname(scratch), { recursive: true }); await writeFile(scratch, Buffer.from(m[2]!, "base64"));
+        try {
+          const edit = await importSubjectReference(dirname(file), scratch, String(body.entityId), String(body.prompt ?? ""), String(body.instruction ?? ""), body.name ? String(body.name) : undefined, body.scope && typeof body.scope === "object" ? Object.fromEntries(Object.entries(body.scope).map(([k, v]) => [k, String(v)])) : undefined);
+          send(res, await updateWorkspace(file, ws => { if (ws.document.editor.revision !== base.document.editor.revision) throw new EventError("STALE_PLAN", "Project changed; retry"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)); }));
+        } finally { await rm(scratch, { force: true }); }
+        return;
+      }
+      if (path === "/api/subject-sync") {
+        if ([...jobs.values()].some(j => j.status === "running")) throw new EventError("JOB_BUSY", "A media job is already running");
+        const base = await readWorkspace(file), variantId = String(body.variantId);
+        const id = crypto.randomUUID(), job = { status: "running" as "running" | "complete" | "failed", message: "整理同步任务…", path: join(dirname(file), "sync", id) }; jobs.set(id, job);
+        const request = await planSubjectSync(base.document, dirname(file), variantId, job.path);
+        const providerFile = process.env.CASSIE_SUBJECT_PROVIDER;
+        if (!providerFile) { job.status = "complete"; job.message = `已生成同步任务，尚未配置主体同步服务（CASSIE_SUBJECT_PROVIDER）：${job.path}`; send(res, { id, request, provider: null }, 202); return; }
+        void (async () => {
+          job.message = "SAM 3 分割并按参考图替换主体…";
+          const edit = await runSubjectSync(base.document, dirname(file), request, JSON.parse(await readFile(providerFile, "utf8")));
+          await updateWorkspace(file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
+          job.status = "complete"; job.message = "主体已同步，新成片待审";
+        })().catch(e => { job.status = "failed"; job.message = e.message; });
+        send(res, { id, request, provider: providerFile }, 202); return;
+      }
       if (path === "/api/render") {
         if ([...jobs.values()].some(j => j.status === "running")) throw new EventError("RENDER_BUSY", "A render is already running");
-        const d = (await readWorkspace(file)).document;
+        const master = (await readWorkspace(file)).document;
+        const d = typeof body.variantId === "string" ? variantDocument(master, body.variantId) : master;
         const id = crypto.randomUUID(); const job = { status: "running" as "running" | "complete" | "failed", message: "Preparing", path: join(dirname(file), "renders", `${id}.mp4`) }; jobs.set(id, job);
         void renderVideo(d, dirname(file), job.path, message => { job.message = message; }, abort.signal).then(() => { job.status = "complete"; job.message = `Revision ${d.editor.revision}`; }).catch(e => { job.status = "failed"; job.message = String(e.message); });
         send(res, { id }, 202); return;
@@ -95,11 +127,19 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
   const address = server.address(); origin = `http://127.0.0.1:${typeof address === "object" && address ? address.port : port}`;
   return { server, url: origin, close: () => { abort.abort(); server.closeAllConnections(); server.close(); } };
 }
+/** Derived documents rename assets; serve each through the master media entry with the same bytes. */
+function sceneUrls(master: EventDocument, d: EventDocument): Record<string, string> {
+  return Object.fromEntries(Object.entries(d.media).map(([id, ref]) => {
+    const source = master.media[id]?.sha256 === ref.sha256 ? id : Object.keys(master.media).find(k => master.media[k]!.sha256 === ref.sha256 && master.editor.assets[k]?.kind !== "image")!;
+    return [id, `/media/${encodeURIComponent(source)}`];
+  }));
+}
 function send(res: ServerResponse, data: unknown, code = 200) { res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" }); res.end(JSON.stringify(data)); }
 async function serveFile(req: IncomingMessage, res: ServerResponse, file: string) {
   const bytes = await readFile(file);
   const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
-  res.setHeader("Content-Type", file.endsWith(".webm") ? "video/webm" : file.endsWith(".mp3") ? "audio/mpeg" : file.endsWith(".wav") ? "audio/wav" : "video/mp4");
+  const type: Record<string, string> = { webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
+  res.setHeader("Content-Type", type[file.split(".").pop()!.toLowerCase()] ?? "video/mp4");
   res.setHeader("Accept-Ranges", "bytes");
   if (req.headers.range && !range) { res.writeHead(416, { "Content-Range": `bytes */${bytes.length}` }).end(); return; }
   if (range) {

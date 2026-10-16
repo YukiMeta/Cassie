@@ -21,7 +21,7 @@ import {
   type Project,
   type TimeUs,
 } from "@cassie/editor-core";
-import { Harness, parseIntent, type EditTransaction, type Intent, type Scope } from "@cassie/harness";
+import { Harness, parseIntent, staleSubjects, type EditTransaction, type Intent, type Scope } from "@cassie/harness";
 import { llmParseIntent, type LlmConfig, type RenderConfig, type VisionConfig } from "./lib/model-client";
 import type { DocumentEdit, EntityId, EventDocument, EventWorkspace, ResolvedEvent, SemanticEntity, SemanticProject, SubjectRegion, Variant } from "@cassie/spec";
 import { projectToJson } from "@cassie/editor-core";
@@ -335,6 +335,45 @@ export function setStageView(view: AppState["stageView"]): void {
 export function selectVariant(id: string | null): void {
   state.selectedVariantId = id;
   emit();
+}
+
+export function setVariantValue(variantId: string, variable: string, value: string): Promise<unknown> {
+  const current = state.runtime?.document.variants?.items[variantId]?.values?.[variable] ?? "";
+  if (current === value.trim()) return Promise.resolve();
+  return runtimeEdit({ kind: "set-variant-values", variantId, values: { [variable]: value.trim() } }, value.trim() ? "已保存：只改这一条变体" : "已改回母版默认值");
+}
+
+export function uploadSubjectReference(input: { entityId: string; name?: string; scope?: Record<string, string>; prompt: string; instruction: string; file: File }): Promise<unknown> {
+  return runtimeTask("上传参考图…", async () => {
+    const image = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(input.file);
+    });
+    await rt.uploadSubjectReference(state.runtime!.document.editor.revision, { entityId: input.entityId, name: input.name, scope: input.scope, prompt: input.prompt, instruction: input.instruction, image });
+    await reloadRuntime();
+    const stale = Object.values(state.runtime!.document.variants?.items ?? {}).filter((v) => staleSubjects(state.runtime!.document, v).includes(input.entityId)).length;
+    setToast(`主体参考已更新：${stale} 条变体需要同步主体`);
+  });
+}
+
+export function syncVariantSubject(variantId: string): Promise<unknown> {
+  return runtimeTask("准备主体同步…", async () => {
+    const message = await rt.subjectSync(variantId, (m) => {
+      state.busy = m;
+      emit();
+    });
+    await reloadRuntime();
+    setToast(message);
+  });
+}
+
+export function renderVariant(variantId: string): Promise<string | undefined> {
+  return runtimeTask("渲染变体…", () => rt.renderJob((m) => {
+    state.busy = m;
+    emit();
+  }, variantId));
 }
 
 export function reviewVariant(variantId: string, review: Variant["review"], note?: string): Promise<unknown> {

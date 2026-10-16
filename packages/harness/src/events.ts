@@ -102,6 +102,18 @@ export function validateDocument(d: EventDocument): void {
     requireThat(!r.replacement || (d.editor.assets[r.replacement.assetId]?.kind === "video" && d.media[r.replacement.assetId]?.sha256 === r.replacement.sha256 && r.replacement.pad >= 0 && r.replacement.pad <= 400), "INVALID_REGION", `Region replacement media: ${id}`);
     requireThat(r.look && /^#[0-9a-f]{6}$/i.test(r.look.color) && r.look.tint >= 0 && r.look.tint <= 1 && r.look.feather >= 0 && r.look.feather <= 200, "INVALID_REGION", `Region look: ${id}`);
   }
+  for (const [id, v] of Object.entries(d.variables ?? {})) {
+    requireThat(v && v.id === id && ["text", "color"].includes(v.type) && typeof v.default === "string" && (v.type !== "color" || /^#[0-9a-f]{6}$/i.test(v.default)), "INVALID_VARIABLE", id);
+  }
+  for (const layer of d.scene.layers) {
+    if (!layer.bind) continue;
+    requireThat(!layer.bind.text || d.variables?.[layer.bind.text]?.type === "text", "INVALID_BINDING", `${layer.id} binds unknown text variable`);
+    requireThat(!layer.bind.color || d.variables?.[layer.bind.color]?.type === "color", "INVALID_BINDING", `${layer.id} binds unknown color variable`);
+  }
+  for (const [id, r] of Object.entries(d.subjectRefs ?? {})) {
+    requireThat(r && id === subjectRefKey(r.entityId, r.scope) && Object.entries(r.scope ?? {}).every(([axis, value]) => d.variants?.axes.find(a => a.id === axis)?.values.some(x => x.id === value)), "INVALID_REFERENCE", `${id} scope`);
+    requireThat(d.semantic.entities[r.entityId]?.kind === "subject" && d.editor.assets[r.assetId]?.kind === "image" && d.media[r.assetId]?.sha256 === r.sha256 && typeof r.prompt === "string" && r.prompt.trim() && typeof r.instruction === "string", "INVALID_REFERENCE", id);
+  }
   if (d.variants) validateVariants(d);
   requireThat(/^#[0-9a-f]{6}$/i.test(d.scene.background), "INVALID_COLOR", "Scene background");
   for (const [id, ref] of Object.entries(d.media)) {
@@ -128,6 +140,11 @@ export function variantKey(set: NonNullable<EventDocument["variants"]>, coords: 
   return set.axes.map(a => `${a.id}=${coords[a.id] ?? ""}`).join("&");
 }
 
+export function subjectRefKey(entityId: string, scope?: Record<string, string>): string {
+  const parts = Object.entries(scope ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`);
+  return parts.length ? `${entityId}@${parts.join("&")}` : entityId;
+}
+
 function validateVariants(d: EventDocument): void {
   const set = d.variants!;
   requireThat(set && d.editor.assets[set.masterAssetId]?.kind === "video" && d.media[set.masterAssetId], "INVALID_VARIANTS", "Variant master must be a video asset of this project");
@@ -151,12 +168,14 @@ function validateVariants(d: EventDocument): void {
     requireThat(!combos.has(key), "DUPLICATE_VARIANT", `Two variants share ${key}`);
     combos.add(key);
     requireThat(item.brief === undefined || typeof item.brief === "string", "INVALID_VARIANT", id);
+    requireThat(!item.values || Object.entries(item.values).every(([k, x]) => d.variables?.[k] && typeof x === "string"), "INVALID_VARIANT", `Variant ${id} sets an undeclared variable`);
     requireThat(item.review !== "approved" || item.take, "INVALID_VARIANT", `Variant ${id} cannot be approved without a take`);
     const t = item.take;
     if (t) {
       requireThat(d.editor.assets[t.assetId]?.kind === "video" && d.media[t.assetId]?.sha256 === t.sha256 && integer(t.width, 1) && integer(t.height, 1) && integer(t.durationUs, 1) && typeof t.provider === "string" && t.provider.trim(), "INVALID_VARIANT", `Variant ${id} take media`);
       const want = aspectRatio(variantAspect(set, item.coords));
       requireThat(!want || Math.abs(t.width / t.height - want) / want < 0.02, "VARIANT_ASPECT", `Variant ${id} take is ${t.width}x${t.height}, expected ${variantAspect(set, item.coords)}`);
+      requireThat(!t.basis || Object.entries(t.basis).every(([e, s]) => d.semantic.entities[e] && /^[a-f0-9]{64}$/.test(s)), "INVALID_VARIANT", `Variant ${id} take basis`);
     }
   }
 }

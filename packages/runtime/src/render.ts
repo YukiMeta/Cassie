@@ -2,7 +2,7 @@ import { copyFile, mkdir, writeFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { createRenderJob, executeRenderJob } from "@hyperframes/producer";
-import { resolveEvents, resolveFrameCount, EventError } from "@cassie/harness";
+import { resolveEvents, resolveFrameCount, resolveVariables, EventError } from "@cassie/harness";
 import type { EventDocument } from "@cassie/spec";
 import { verifiedMedia } from "./media";
 
@@ -22,7 +22,8 @@ export function regionTracks(d: EventDocument) {
 }
 
 /** Pure compiler used by preview and render; no network, timers, randomness or model calls. */
-export function compileScene(d: EventDocument, assetUrls: Record<string, string> = {}, matteEventId?: string): string {
+export function compileScene(source: EventDocument, assetUrls: Record<string, string> = {}, matteEventId?: string): string {
+  const d = resolveVariables(source);
   const events = resolveEvents(d);
   const matte=matteEventId?d.subjectMattes?.[matteEventId]:undefined;
   const matteEvent=matteEventId?d.events.find(e=>e.id===matteEventId):undefined;
@@ -40,7 +41,7 @@ export function compileScene(d: EventDocument, assetUrls: Record<string, string>
     let content = "";
     if (layer.kind === "person") content = `<svg viewBox="0 0 240 330" width="100%" height="100%"><ellipse cx="120" cy="316" rx="72" ry="9" fill="#000" opacity=".2"/><path d="M96 210L85 304M143 210L158 304" stroke="#59668b" stroke-width="29" stroke-linecap="round"/><path d="M77 315h29M144 315h32" stroke="#dce6f7" stroke-width="13" stroke-linecap="round"/><path d="M100 101Q66 123 63 188" fill="none" stroke="${fill}" stroke-width="25" stroke-linecap="round"/><path d="M87 99Q119 85 153 99L155 220Q121 232 82 220Z" fill="${fill}"/><g id="arm-${i}" transform="rotate(-25 145 117)"><path d="M145 117L163 172" stroke="${fill}" stroke-width="24" stroke-linecap="round"/><g id="forearm-${i}"><path d="M163 172L177 222" stroke="#dfb8a0" stroke-width="17" stroke-linecap="round"/><circle cx="177" cy="224" r="11" fill="#dfb8a0"/></g></g><rect x="110" y="69" width="25" height="32" rx="10" fill="#dfb8a0"/><ellipse cx="122" cy="49" rx="36" ry="42" fill="#e9c5ae"/><path d="M85 49Q74 0 117 4Q163 -5 161 53L149 33Q112 38 96 23L94 58Z" fill="#303246"/><circle cx="111" cy="49" r="2.7" fill="#303246"/><circle cx="137" cy="49" r="2.7" fill="#303246"/><path d="M116 68Q125 74 133 66" fill="none" stroke="#916755" stroke-width="2.5" stroke-linecap="round"/></svg>`;
     if (layer.kind === "card") content = `<div style="width:100%;height:100%;border:1px solid ${fill};border-radius:24px;background:linear-gradient(145deg,${fill}33,#172033);display:flex;align-items:center;justify-content:center;flex-direction:column;box-shadow:0 25px 60px #0005"><div style="width:60px;height:105px;border-radius:14px;background:${fill};box-shadow:inset -14px -8px 0 #0002;transform:rotate(-8deg)"></div><span style="margin-top:22px;letter-spacing:6px;color:${fill};font-size:18px">${escape(layer.text ?? "")}</span></div>`;
-    if (layer.kind === "text") content = `<div style="font-size:${Math.max(12, layer.height * .65)}px;font-weight:650;letter-spacing:2px;line-height:1.2;color:${fill}">${escape(event?.text ?? layer.text ?? "")}</div>`;
+    if (layer.kind === "text") content = `<div style="font-size:${Math.max(12, layer.height * .65)}px;font-weight:650;letter-spacing:2px;line-height:1.2;color:${fill};text-align:center;text-shadow:0 1px 2px #000a,0 2px 14px #0008">${escape(event?.text ?? layer.text ?? "")}</div>`;
     if (layer.kind === "video") {
       const src = layer.assetId ? assetUrls[layer.assetId] : undefined;
       if (!src) throw new EventError("MISSING_MEDIA", `No staged media URL for ${layer.id}`);

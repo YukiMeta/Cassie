@@ -57,6 +57,31 @@ export interface VisualLayer {
   crop?: { x: number; y: number; width: number; height: number };
   /** 0..1 strength of `color` applied as a hue/saturation grade on a video layer; luminance is kept. */
   tint?: number;
+  /** Composition variables this layer reads; values come from the variant, then its axis values, then the default. */
+  bind?: { text?: string; color?: string };
+}
+/** A value the master leaves open for each variant, like a HyperFrames composition variable. */
+export interface CompositionVariable {
+  id: string;
+  label: string;
+  type: "text" | "color";
+  default: string;
+}
+/**
+ * What a subject should look like in every variant: a reference image plus the concept prompt a
+ * segmenter (SAM 3) uses to find the subject in each take. Changing it makes takes stale.
+ */
+export interface SubjectReference {
+  entityId: string;
+  /**
+   * Axis id → value id this reference applies to; absent means every variant. A product swap is
+   * global, a host is per market. The most specific matching reference wins.
+   */
+  scope?: Record<string, string>;
+  assetId: string;
+  sha256: string;
+  prompt: string;
+  instruction: string;
 }
 export interface MediaReference {
   /** Portable project-relative path; no credentials or network URLs. */
@@ -130,6 +155,8 @@ export interface VariantTake {
   height: number;
   durationUs: number;
   provider: string;
+  /** Subject entity → sha256 of the reference this take was made with. Absent means the master's original look. */
+  basis?: Record<string, string>;
 }
 export interface Variant {
   id: string;
@@ -137,6 +164,8 @@ export interface Variant {
   coords: Record<string, string>;
   /** Direction for this variant only, layered over the set's shared brief. */
   brief?: string;
+  /** Variable id → value for this variant only. */
+  values?: Record<string, string>;
   take?: VariantTake;
   review: "pending" | "approved" | "rejected";
   note?: string;
@@ -161,6 +190,9 @@ export interface EventDocument {
   subjectMattes?: Record<string, SubjectMatte>;
   regions?: Record<string, SubjectRegion>;
   variants?: VariantSet;
+  variables?: Record<string, CompositionVariable>;
+  /** Keyed by `subjectRefKey(entityId, scope)`. */
+  subjectRefs?: Record<string, SubjectReference>;
 }
 export interface ActionEdit {
   kind: "set-action-state";
@@ -181,7 +213,13 @@ export type DocumentEdit =
   | { kind: "add-variants"; items: Variant[] }
   | { kind: "remove-variants"; ids: string[] }
   | { kind: "attach-variant-take"; variantId: string; take: VariantTake; asset: MediaAsset; media: MediaReference }
-  | { kind: "review-variant"; variantId: string; review: Variant["review"]; note?: string; brief?: string };
+  | { kind: "review-variant"; variantId: string; review: Variant["review"]; note?: string; brief?: string }
+  | { kind: "set-variable"; variable: CompositionVariable }
+  /** Box is a 0..1 fraction of the canvas so the overlay can be placed on any variant aspect. */
+  /** `anchor: "end"` keeps an end card the same distance from the end in variants of another length. */
+  | { kind: "add-overlay-text"; layerId: string; label: string; text?: string; bind?: string; color: string; startFrame: number; durationFrames: number; box: { x: number; y: number; width: number; height: number }; anchor?: "start" | "end" }
+  | { kind: "set-variant-values"; variantId: string; values: Record<string, string> }
+  | { kind: "set-subject-reference"; entityId: string; name?: string; scope?: Record<string, string>; reference: SubjectReference | null; asset?: MediaAsset; media?: MediaReference };
 export interface DocumentEditPlan {
   id: string;
   status: "ready";

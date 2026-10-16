@@ -11,3 +11,4 @@ export * from "./film";
 export * from "./replace";
 export * from "./bundle";
 export * from "./variants";
+export * from "./subject-sync";
