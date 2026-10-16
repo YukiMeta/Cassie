@@ -159,6 +159,7 @@ function runtimeProxy(target: string) {
     "/rt": { ...rewrite, rewrite: (path: string) => path.replace(/^\/rt/, "") },
     "/scene": rewrite,
     "/media/": rewrite,
+    "/poster/": rewrite,
     "/font-400.woff2": rewrite,
     "/font-600.woff2": rewrite,
   };

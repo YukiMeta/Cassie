@@ -89,3 +89,4 @@ export async function renderJob(onProgress: (message: string) => void, variantId
 
 export const sceneUrl = (revision: number) => `/scene?revision=${revision}`;
 export const mediaUrl = (assetId: string) => `/media/${encodeURIComponent(assetId)}`;
+export const posterUrl = (assetId: string, seconds = 1) => `/poster/${encodeURIComponent(assetId)}?t=${seconds.toFixed(2)}`;

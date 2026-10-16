@@ -7,7 +7,8 @@ import { importSubjectReference, planSubjectSync, runSubjectSync } from "./subje
 import { readWorkspace, updateWorkspace } from "./store";
 import { compileScene, renderVideo, fontPath } from "./render";
 import { extractSubjectMatte, verifyMatteEdit, exportSubjectCutout } from "./matte";
-import { verifiedMedia } from "./media";
+import { runProcess, verifiedMedia } from "./media";
+import { existsSync } from "node:fs";
 import { detectObjects } from "./detect";
 import { trackRegion } from "./track";
 
@@ -41,6 +42,18 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
           const ref = (await readWorkspace(file)).document.media[decodeURIComponent(path.slice(7))];
           if (!ref) throw new EventError("NOT_FOUND", "Unknown media");
           await serveFile(req, res, await verifiedMedia(dirname(file), ref)); return;
+        }
+        if (path.startsWith("/poster/")) {
+          const ref = (await readWorkspace(file)).document.media[decodeURIComponent(path.slice(8))];
+          if (!ref) throw new EventError("NOT_FOUND", "Unknown media");
+          const at = Math.max(0, Math.min(600, Number(requestUrl.searchParams.get("t") ?? 1) || 0));
+          const out = join(dirname(file), ".cassie-cache", "posters", `${ref.sha256}-${at.toFixed(2)}.jpg`);
+          if (!existsSync(out)) {
+            await mkdir(dirname(out), { recursive: true });
+            await runProcess("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-i", await verifiedMedia(dirname(file), ref), "-frames:v", "1", "-vf", "scale=480:480:force_original_aspect_ratio=decrease", "-q:v", "4", out], { timeoutMs: 30_000 });
+          }
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          await serveFile(req, res, out); return;
         }
         if (path.startsWith("/api/render/")) {
           const job = jobs.get(path.slice(12)); if (!job) throw new EventError("NOT_FOUND", "Unknown render");
