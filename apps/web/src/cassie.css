@@ -1361,3 +1361,13 @@ body.resizing .app * { pointer-events: none; }
 .subject-ref b{font-weight:500}
 .subject-ref small{color:var(--dim);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .subject-ref.stale img{outline:1px solid rgba(224,180,92,.5)}
+.vb-sync-all{font-size:11px;color:#e0b45c;border-color:rgba(224,180,92,.3)}
+.confirm-scrim{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(3,4,6,.6);backdrop-filter:blur(2px)}
+.confirm-card{width:min(440px,calc(100vw - 32px));padding:18px 18px 14px;border-radius:8px;background:#14161c;border:1px solid var(--line-strong);box-shadow:var(--shadow)}
+.confirm-card h3{margin:0 0 10px;font-size:14px;font-weight:500}
+.confirm-card ul{list-style:none;margin:0;padding:0;font-size:12px;color:var(--muted);line-height:1.8;font-variant-numeric:tabular-nums}
+.confirm-card li:last-child{color:var(--dim);margin-top:4px}
+.confirm-cost{margin-top:12px;padding:8px 10px;border-radius:4px;background:rgba(255,255,255,.04);font-size:13px;font-variant-numeric:tabular-nums}
+.confirm-card footer{display:flex;align-items:center;gap:6px;margin-top:16px}
+.confirm-card footer select,.confirm-mode{margin-right:auto;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--dim);font:inherit;font-size:11px;padding:4px 6px}
+.confirm-mode{margin-right:0;color:var(--text);font-size:12px}

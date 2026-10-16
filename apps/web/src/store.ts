@@ -71,7 +71,19 @@ export interface AppState {
   /** 舞台看母版，还是看同一母版派生的变体矩阵 */
   stageView: "master" | "variants";
   selectedVariantId: string | null;
+  /** 什么时候先问再跑模型任务：每次 / 只在要花钱时 / 从不 */
+  confirmMode: ConfirmMode;
+  confirm: ConfirmRequest | null;
 }
+
+export type ConfirmMode = "always" | "paid" | "auto";
+export interface ConfirmRequest {
+  title: string;
+  lines: string[];
+  cost: string | null;
+  action: string;
+}
+
 
 export interface RuntimeState {
   workspace: EventWorkspace;
@@ -165,6 +177,8 @@ export function initStore(): void {
     busy: null,
     stageView: "master",
     selectedVariantId: null,
+    confirmMode: loadConfirmMode(),
+    confirm: null,
   };
   adapter.subscribe(() => emit());
   // 运行时工程优先；连不上再恢复本地 autosave / 演示项目。
@@ -358,15 +372,82 @@ export function uploadSubjectReference(input: { entityId: string; name?: string;
   });
 }
 
-export function syncVariantSubject(variantId: string): Promise<unknown> {
-  return runtimeTask("准备主体同步…", async () => {
-    const message = await rt.subjectSync(variantId, (m) => {
-      state.busy = m;
-      emit();
-    });
-    await reloadRuntime();
-    setToast(message);
+const CONFIRM_KEY = "cassie:confirm-mode";
+
+function loadConfirmMode(): ConfirmMode {
+  try {
+    const v = localStorage.getItem(CONFIRM_KEY);
+    return v === "always" || v === "auto" ? v : "paid";
+  } catch {
+    return "paid";
+  }
+}
+
+export function setConfirmMode(mode: ConfirmMode): void {
+  state.confirmMode = mode;
+  try {
+    localStorage.setItem(CONFIRM_KEY, mode);
+  } catch {
+    // 存不下就只在本次会话生效
+  }
+  emit();
+}
+
+let settleConfirm: ((ok: boolean) => void) | null = null;
+
+function askConfirm(request: ConfirmRequest): Promise<boolean> {
+  settleConfirm?.(false);
+  state.confirm = request;
+  emit();
+  return new Promise((resolve) => {
+    settleConfirm = resolve;
   });
+}
+
+export function answerConfirm(ok: boolean): void {
+  state.confirm = null;
+  emit();
+  settleConfirm?.(ok);
+  settleConfirm = null;
+}
+
+/** 主体同步：先报价，按确认档位决定是否先问，再逐条跑。没配服务时只写任务包，不花钱。 */
+export async function syncVariantSubjects(variantIds: string[]): Promise<unknown> {
+  const quote = await rt.subjectSyncQuote(variantIds).catch((e: Error) => {
+    setToast(e.message);
+    return null;
+  });
+  if (!quote) return;
+  if (!quote.items.length) return setToast("这些变体的主体都已是最新");
+  const paid = Boolean(quote.provider);
+  if (state.confirmMode === "always" || (state.confirmMode === "paid" && paid)) {
+    const ok = await askConfirm({
+      title: `同步主体 · ${quote.items.length} 条变体`,
+      lines: [
+        ...quote.items.slice(0, 6).map((i) => `${i.variantId}：${i.subjects.join("、")} · ${i.seconds.toFixed(1)}s`),
+        ...(quote.items.length > 6 ? [`另外 ${quote.items.length - 6} 条…`] : []),
+        paid ? `由 ${quote.provider} 执行，共 ${quote.seconds.toFixed(1)} 秒视频` : "未配置同步服务，只生成任务包，不会产生费用",
+      ],
+      cost: quote.cost ? `约 ${quote.cost.amount} ${quote.cost.unit}` : paid ? "服务未声明价格" : null,
+      action: paid ? "开始同步" : "生成任务包",
+    });
+    if (!ok) return;
+  }
+  return runtimeTask("准备主体同步…", async () => {
+    let last = "";
+    for (const [n, item] of quote.items.entries()) {
+      last = await rt.subjectSync(item.variantId, (m) => {
+        state.busy = `${n + 1}/${quote.items.length} · ${m}`;
+        emit();
+      });
+    }
+    await reloadRuntime();
+    setToast(quote.items.length > 1 ? `${quote.items.length} 条变体已处理 · ${last}` : last);
+  });
+}
+
+export function syncVariantSubject(variantId: string): Promise<unknown> {
+  return syncVariantSubjects([variantId]);
 }
 
 export function renderVariant(variantId: string): Promise<string | undefined> {

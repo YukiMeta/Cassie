@@ -64,6 +64,18 @@ export function uploadSubjectReference(revision: number, body: { entityId: strin
   return call<EventWorkspace>("/api/subject-reference", { revision, ...body });
 }
 
+export interface SyncQuote {
+  provider: string | null;
+  items: { variantId: string; subjects: string[]; seconds: number }[];
+  seconds: number;
+  cost: { amount: number; unit: string } | null;
+}
+
+/** What a subject sync over these variants would run and cost, before anything is spent. */
+export function subjectSyncQuote(variantIds: string[]) {
+  return call<SyncQuote>("/api/subject-sync/quote", { variantIds });
+}
+
 /** Starts a SAM 3 subject sync for one variant; without a configured provider it only writes the task. */
 export async function subjectSync(variantId: string, onProgress: (message: string) => void): Promise<string> {
   const { id, provider } = await call<{ id: string; provider: string | null }>("/api/subject-sync", { variantId });

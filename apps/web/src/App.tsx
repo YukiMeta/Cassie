@@ -16,6 +16,7 @@ import { Stage } from "./components/Stage";
 import { AgentPanel } from "./components/AgentPanel";
 import { Timeline } from "./components/Timeline";
 import { SettingsModal } from "./components/SettingsModal";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { LayoutContext } from "./components/PanelGrip";
 
 const SLOT_ORDER: SlotId[] = ["left", "center", "right", "bottom"];
@@ -136,6 +137,7 @@ export function App() {
   }
 
   const { slots, sizes } = state.layout;
+  const rightHidden = state.stageView === "variants" && Boolean(state.runtime?.document.variants) && slots.right === "agent";
   const renderPanel = (panel: PanelId) => {
     const Comp = PANEL_COMPONENTS[panel];
     return <Comp key={panel} />;
@@ -147,7 +149,7 @@ export function App() {
       <main
         className="app"
         style={{
-          gridTemplateColumns: `${sizes.leftW}px 12px minmax(0, 1fr) 12px ${sizes.rightW}px`,
+          gridTemplateColumns: `${sizes.leftW}px 12px minmax(0, 1fr) ${rightHidden ? "0px 0px" : `12px ${sizes.rightW}px`}`,
           gridTemplateRows: `minmax(0, 1fr) 10px ${sizes.bottomH}px`,
         }}
       >
@@ -170,10 +172,10 @@ export function App() {
         >
           {renderPanel(slots.center)}
         </div>
-        <div className="panel-divider right" onPointerDown={startResize("rightW")} title="拖动调整宽度" />
+        {!rightHidden && <div className="panel-divider right" onPointerDown={startResize("rightW")} title="拖动调整宽度" />}
         <div
           className={`slot ${dragTarget === "right" ? "drop-target" : ""} ${dragRef.current?.from === "right" ? "drag-source" : ""}`}
-          style={{ gridArea: "right" }}
+          style={{ gridArea: "right", display: rightHidden ? "none" : undefined }}
           ref={(el) => {
             slotEls.current.right = el;
           }}
@@ -193,6 +195,7 @@ export function App() {
       </main>
       {state.toast && <div className="toast visible">{state.toast}</div>}
       {state.settingsOpen && <SettingsModal />}
+      <ConfirmDialog />
     </LayoutContext.Provider>
   );
 }

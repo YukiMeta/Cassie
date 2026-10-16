@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { llmChat, renderHealth, type LlmConfig, type RenderConfig, type VisionConfig } from "../lib/model-client";
-import { saveModelConfig, setSettingsOpen, setToast, useAppState, type ModelConfigState } from "../store";
+import { saveModelConfig, setConfirmMode, setSettingsOpen, setToast, useAppState, type ConfirmMode, type ModelConfigState } from "../store";
+import { CONFIRM_MODES } from "./ConfirmDialog";
 
 /**
  * 模型设置 —— 全站模型能力全部 BYOK：
@@ -81,6 +82,18 @@ export function SettingsModal() {
             ✕
           </button>
         </div>
+
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <div>
+              <strong>模型任务确认</strong>
+              <p>改文字、审核这类本地操作从不询问；生成、主体同步这类模型任务按这里决定是否先确认。</p>
+            </div>
+            <select className="confirm-mode" value={state.confirmMode} onChange={(e) => setConfirmMode(e.target.value as ConfirmMode)}>
+              {CONFIRM_MODES.map(([id, text]) => <option key={id} value={id}>{text}</option>)}
+            </select>
+          </div>
+        </section>
 
         <section className="settings-section">
           <div className="settings-section-head">

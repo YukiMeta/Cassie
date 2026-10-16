@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, variantDocument, EventError } from "@cassie/harness";
+import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, staleSubjects, variantDocument, EventError } from "@cassie/harness";
 import type { EventDocument } from "@cassie/spec";
 import { importSubjectReference, planSubjectSync, runSubjectSync } from "./subject-sync";
 import { readWorkspace, updateWorkspace } from "./store";
@@ -108,6 +108,21 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
           const edit = await importSubjectReference(dirname(file), scratch, String(body.entityId), String(body.prompt ?? ""), String(body.instruction ?? ""), body.name ? String(body.name) : undefined, body.scope && typeof body.scope === "object" ? Object.fromEntries(Object.entries(body.scope).map(([k, v]) => [k, String(v)])) : undefined);
           send(res, await updateWorkspace(file, ws => { if (ws.document.editor.revision !== base.document.editor.revision) throw new EventError("STALE_PLAN", "Project changed; retry"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)); }));
         } finally { await rm(scratch, { force: true }); }
+        return;
+      }
+      if (path === "/api/subject-sync/quote") {
+        const d = (await readWorkspace(file)).document;
+        const ids = Array.isArray(body.variantIds) ? body.variantIds.map(String) : [];
+        const providerFile = process.env.CASSIE_SUBJECT_PROVIDER;
+        const provider = providerFile ? JSON.parse(await readFile(providerFile, "utf8")) : null;
+        const items = ids.flatMap((id: string) => {
+          const v = d.variants?.items[id];
+          const stale = v?.take ? staleSubjects(d, v) : [];
+          return stale.length ? [{ variantId: id, subjects: stale.map(e => d.semantic.entities[e]?.name ?? e), seconds: v!.take!.durationUs / 1e6 }] : [];
+        });
+        const seconds = items.reduce((s: number, i: { seconds: number }) => s + i.seconds, 0);
+        const rate = Number(provider?.pricing?.perSecond);
+        send(res, { provider: provider?.name ?? null, items, seconds, cost: rate > 0 ? { amount: Math.round(rate * seconds * 100) / 100, unit: String(provider.pricing.unit ?? "credits") } : null });
         return;
       }
       if (path === "/api/subject-sync") {

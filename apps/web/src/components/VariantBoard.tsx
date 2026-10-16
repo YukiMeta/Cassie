@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { EventDocument, Variant, VariantAxis, VariantSet } from "@cassie/spec";
 import { staleSubjects, subjectRefsFor, variableValues } from "@cassie/harness";
-import { renderVariant, reviewVariant, selectVariant, setStageView, setVariantValue, syncVariantSubject, uploadSubjectReference, useAppState } from "../store";
+import { renderVariant, reviewVariant, selectVariant, setStageView, setVariantValue, syncVariantSubject, syncVariantSubjects, uploadSubjectReference, useAppState } from "../store";
 import { mediaUrl, posterUrl } from "../lib/runtime";
 import { PanelGrip } from "./PanelGrip";
 
@@ -77,10 +77,17 @@ export function VariantBoard() {
           <span className="vb-count"><b>{counts.approved}</b>/{items.length} 通过</span>
           {state.busy && <span className="stage-busy">{state.busy}</span>}
         </div>
-        <div className="vb-filter">
+        <div className="tool-group">
+          {staleCount > 0 && (
+            <button className="tool-btn vb-sync-all" disabled={Boolean(state.busy)} onClick={() => void syncVariantSubjects(items.filter((v) => staleSubjects(doc, v).length).map((v) => v.id))}>
+              同步全部待同步 {staleCount}
+            </button>
+          )}
+          <div className="vb-filter">
           {([["all", "全部"], ["pending", `待审 ${counts.pending}`], ["rejected", `打回 ${counts.rejected}`], ["stale", `待同步 ${staleCount}`]] as const).map(([f, text]) => (
             <button key={f} className={filter === f ? "active" : ""} disabled={f === "stale" && !staleCount} onClick={() => setFilter(f)}>{text}</button>
           ))}
+          </div>
         </div>
       </div>
       <div className="variant-body">
