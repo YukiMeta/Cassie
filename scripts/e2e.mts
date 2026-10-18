@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importTake, importVideoWorkspace, readWorkspace, runProcess, serveWorkspace, writeJson, applyEdits } from '../packages/runtime/src/index';
 import type { DocumentEdit, EventWorkspace } from '../packages/spec/src/index';
@@ -206,6 +206,24 @@ try {
     await clickText('.confirm-card button', '取消');
     await until(async () => (await count('.confirm-card')) === 0, 'dialog closed');
     assert.equal((await doc()).variants!.items['jp-9x16']!.take!.provider, 'synthetic');
+  });
+  await step('a paid sync left running across a restart is not charged again', async () => {
+    const jobs = join(dirname(project), '.cassie-cache', 'sync-jobs');
+    await mkdir(jobs, { recursive: true });
+    await writeFile(join(jobs, 'jp-16x9.json'), JSON.stringify({ variantId: 'jp-16x9', startedAt: Date.now() }));
+        try {
+    const post = (url: string, body: unknown) => page.evaluate(async (u, b) => {
+      const { token } = await (await fetch('/rt/api/project')).json();
+      const r = await fetch('/rt' + u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cassie-Token': token }, body: JSON.stringify(b) });
+      return { status: r.status, body: await r.json() };
+    }, url, body);
+    const r = (await post('/api/tools/call', { name: 'subject_sync', args: { confirmed: true } })).body;
+    assert.ok(r.text, `tool response: ${JSON.stringify(r)}`);
+    assert.deepEqual(JSON.parse(r.text).inProgress, ['jp-16x9']);
+    const ui = await post('/api/subject-sync', { variantId: 'jp-16x9' });
+    assert.ok(ui.status >= 400, 'UI sync endpoint refuses too');
+    assert.notEqual((await doc()).variants!.items['jp-16x9']!.take!.provider, 'e2e-hue-shift');
+    } finally { await rm(join(jobs, 'jp-16x9.json'), { force: true }); }
   });
   await step('confirmed sync replaces both takes and clears stale', async () => {
     const before = (await doc()).variants!.items['jp-9x16']!.take!.sha256;

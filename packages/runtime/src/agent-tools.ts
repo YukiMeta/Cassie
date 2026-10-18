@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { applyDocumentEdit, diff, EventError, planDocumentEdit, resolveEvents, resolveFrameCount, rollbackAction, staleSubjects, variableValues, variantDocument } from "@cassie/harness";
@@ -250,10 +250,10 @@ export const AGENT_TOOLS: AgentTool[] = [
       if (!quote.items.length) return json({ ok: true, synced: [], message: "Nothing stale" });
       const p = await provider();
       if (p && args.confirmed !== true) return json({ ok: false, needsConfirmation: true, quote, message: "Show this quote to the human and call again with confirmed=true only if they agree." });
-      const busy = quote.items.filter(i => inFlight.has(i.variantId)).map(i => i.variantId);
+      const busy = p ? await runningSyncs(ctx.file, quote.items.map(i => i.variantId)) : [];
       if (busy.length) return json({ ok: false, inProgress: busy, message: "A paid sync is already running for these variants. Wait and check list_variants; do not call subject_sync again for them." });
       const done: { variantId: string; bundle?: string }[] = [];
-      quote.items.forEach(i => inFlight.add(i.variantId));
+      if (p) await Promise.all(quote.items.map(i => markSync(ctx.file, i.variantId)));
       try {
       for (const item of quote.items) {
         const current = (await readWorkspace(ctx.file)).document;
@@ -263,15 +263,35 @@ export const AGENT_TOOLS: AgentTool[] = [
         const edit = await runSubjectSync(current, dirname(ctx.file), request, p);
         await updateWorkspace(ctx.file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
         done.push({ variantId: item.variantId });
-        inFlight.delete(item.variantId);
+        await clearSync(ctx.file, item.variantId);
       }
-      } finally { quote.items.forEach(i => inFlight.delete(i.variantId)); }
+      } catch (e) { await Promise.all(quote.items.map(i => clearSync(ctx.file, i.variantId))); throw e; }
       return json({ ok: true, provider: p?.name ?? null, synced: done, note: p ? "New takes are pending review" : "No provider configured; request bundles written" });
     },
   },
 ];
 
-const inFlight = new Set<string>();
+/** Paid sync jobs survive restarts on disk; one that never cleared is treated as running for SYNC_JOB_TTL_MS. */
+const SYNC_JOB_TTL_MS = 30 * 60_000;
+const syncJobFile = (file: string, id: string) => join(dirname(file), ".cassie-cache", "sync-jobs", `${encodeURIComponent(id)}.json`);
+
+export async function markSync(file: string, id: string) {
+  await mkdir(dirname(syncJobFile(file, id)), { recursive: true });
+  await writeFile(syncJobFile(file, id), JSON.stringify({ variantId: id, startedAt: Date.now() }));
+}
+
+export async function clearSync(file: string, id: string) {
+  await rm(syncJobFile(file, id), { force: true });
+}
+
+export async function runningSyncs(file: string, ids: string[]) {
+  const busy: string[] = [];
+  for (const id of ids) {
+    const job = await readFile(syncJobFile(file, id), "utf8").then(t => JSON.parse(t) as { startedAt: number }, () => null);
+    if (job && Date.now() - job.startedAt < SYNC_JOB_TTL_MS) busy.push(id);
+  }
+  return busy;
+}
 
 export async function callAgentTool(ctx: ToolContext, name: string, args: Record<string, unknown> = {}): Promise<ToolResult & { isError?: boolean }> {
   const tool = AGENT_TOOLS.find(t => t.name === name);

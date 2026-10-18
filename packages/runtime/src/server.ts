@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, staleSubjects, variantDocument, EventError } from "@cassie/harness";
 import type { EventDocument } from "@cassie/spec";
 import { importSubjectReference, planSubjectSync, runSubjectSync } from "./subject-sync";
-import { callAgentTool, closeAgentBrowser, subjectSyncQuote, toolManifest, type ToolContext } from "./agent-tools";
+import { callAgentTool, clearSync, closeAgentBrowser, markSync, runningSyncs, subjectSyncQuote, toolManifest, type ToolContext } from "./agent-tools";
 import { readWorkspace, updateWorkspace } from "./store";
 import { compileScene, renderVideo, fontPath } from "./render";
 import { extractSubjectMatte, verifyMatteEdit, exportSubjectCutout } from "./matte";
@@ -126,16 +126,18 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
       if (path === "/api/subject-sync") {
         if ([...jobs.values()].some(j => j.status === "running")) throw new EventError("JOB_BUSY", "A media job is already running");
         const base = await readWorkspace(file), variantId = String(body.variantId);
+        if (process.env.CASSIE_SUBJECT_PROVIDER && (await runningSyncs(file, [variantId])).length) throw new EventError("JOB_BUSY", "这条变体的付费主体同步已在进行，等它完成，不会重复扣费");
         const id = crypto.randomUUID(), job = { status: "running" as "running" | "complete" | "failed", message: "整理同步任务…", path: join(dirname(file), "sync", id) }; jobs.set(id, job);
         const request = await planSubjectSync(base.document, dirname(file), variantId, job.path);
         const providerFile = process.env.CASSIE_SUBJECT_PROVIDER;
         if (!providerFile) { job.status = "complete"; job.message = `已生成同步任务，尚未配置主体同步服务（CASSIE_SUBJECT_PROVIDER）：${job.path}`; send(res, { id, request, provider: null }, 202); return; }
+        await markSync(file, variantId);
         void (async () => {
           job.message = "SAM 3 分割并按参考图替换主体…";
           const edit = await runSubjectSync(base.document, dirname(file), request, JSON.parse(await readFile(providerFile, "utf8")));
           await updateWorkspace(file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
           job.status = "complete"; job.message = "主体已同步，新成片待审";
-        })().catch(e => { job.status = "failed"; job.message = e.message; });
+        })().catch(e => { job.status = "failed"; job.message = e.message; }).finally(() => clearSync(file, variantId));
         send(res, { id, request, provider: providerFile }, 202); return;
       }
       if (path === "/api/render") {
