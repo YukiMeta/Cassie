@@ -250,7 +250,11 @@ export const AGENT_TOOLS: AgentTool[] = [
       if (!quote.items.length) return json({ ok: true, synced: [], message: "Nothing stale" });
       const p = await provider();
       if (p && args.confirmed !== true) return json({ ok: false, needsConfirmation: true, quote, message: "Show this quote to the human and call again with confirmed=true only if they agree." });
+      const busy = quote.items.filter(i => inFlight.has(i.variantId)).map(i => i.variantId);
+      if (busy.length) return json({ ok: false, inProgress: busy, message: "A paid sync is already running for these variants. Wait and check list_variants; do not call subject_sync again for them." });
       const done: { variantId: string; bundle?: string }[] = [];
+      quote.items.forEach(i => inFlight.add(i.variantId));
+      try {
       for (const item of quote.items) {
         const current = (await readWorkspace(ctx.file)).document;
         const dir = join(dirname(ctx.file), "sync", `${item.variantId}-${Date.now()}`);
@@ -259,11 +263,15 @@ export const AGENT_TOOLS: AgentTool[] = [
         const edit = await runSubjectSync(current, dirname(ctx.file), request, p);
         await updateWorkspace(ctx.file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
         done.push({ variantId: item.variantId });
+        inFlight.delete(item.variantId);
       }
+      } finally { quote.items.forEach(i => inFlight.delete(i.variantId)); }
       return json({ ok: true, provider: p?.name ?? null, synced: done, note: p ? "New takes are pending review" : "No provider configured; request bundles written" });
     },
   },
 ];
+
+const inFlight = new Set<string>();
 
 export async function callAgentTool(ctx: ToolContext, name: string, args: Record<string, unknown> = {}): Promise<ToolResult & { isError?: boolean }> {
   const tool = AGENT_TOOLS.find(t => t.name === name);
