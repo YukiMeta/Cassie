@@ -5,6 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { createServer as createHttpServer, type Server } from 'node:http';
 import { existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,10 +64,35 @@ process.stdout.write(JSON.stringify({ outputPath: out }));
   return file;
 }
 
+/**
+ * A scripted OpenAI-compatible model: reads the project, overrides one CTA, checks a frame, answers.
+ * Records every request so the test can assert the frame really went back to the model as an image.
+ */
+function fakeModel() {
+  const requests: { messages: { role: string; content: unknown; tool_calls?: unknown[] }[]; tools: { function: { name: string } }[] }[] = [];
+  const server: Server = createHttpServer(async (req, res) => {
+    let body = '';
+    for await (const c of req) body += c;
+    const r = JSON.parse(body);
+    requests.push(r);
+    const toolMsgs = r.messages.filter((m: { role: string }) => m.role === 'tool');
+    const call = (name: string, args: unknown) => ({ choices: [{ message: { content: null, tool_calls: [{ id: `call_${toolMsgs.length}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] });
+    let reply;
+    if (toolMsgs.length === 0) reply = call('project_overview', {});
+    else if (toolMsgs.length === 1) reply = call('apply_edit', { baseRevision: JSON.parse(toolMsgs[0].content).revision, edit: { kind: 'set-variant-values', variantId: 'jp-16x9', values: { cta: '今すぐ予約' } } });
+    else if (toolMsgs.length === 2) reply = call('preview_frame', { variantId: 'jp-16x9', seconds: 3.5 });
+    else reply = { choices: [{ message: { content: `已把日本横版的 CTA 改成「今すぐ予約」，截图确认文字完整。事务 ${JSON.parse(toolMsgs[1].content).transactionId}` } }] };
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(reply));
+  });
+  return { server, requests };
+}
+
 const results: { name: string; ok: boolean; ms: number; error?: string }[] = [];
 let runtime: Awaited<ReturnType<typeof serveWorkspace>> | undefined;
 let vite: Awaited<ReturnType<typeof createServer>> | undefined;
 let browser: Awaited<ReturnType<typeof puppeteer.launch>> | undefined;
+const model = fakeModel();
 
 try {
   const project = await fixture();
@@ -78,7 +104,12 @@ try {
   await vite.listen();
   const appUrl = vite.resolvedUrls!.local[0]!;
   browser = await puppeteer.launch({ headless: true, defaultViewport: { width: 1440, height: 900 } });
+  await new Promise<void>(r => model.server.listen(0, '127.0.0.1', r));
+  const modelUrl = `http://127.0.0.1:${(model.server.address() as { port: number }).port}`;
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument((url: string) => {
+    localStorage.setItem('cassie:model-config', JSON.stringify({ llm: { enabled: true, baseUrl: url, apiKey: 'e2e', model: 'scripted' } }));
+  }, modelUrl);
   const pageErrors: string[] = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
   const doc = async () => (await readWorkspace(project)).document;
@@ -114,15 +145,16 @@ try {
   console.log(`Cassie e2e · ${appUrl}`);
   await step('app boots against the runtime', async () => {
     await page.goto(`${appUrl}?runtime=1`, { waitUntil: 'domcontentloaded' });
-    await until(async () => (await count('.view-switch button')) === 2, 'master/variant switch');
+    await until(async () => (await count('.view-switch:not(.agent-panel .view-switch) button')) === 2, 'master/variant switch');
   });
   await step('variant board shows every take as a poster frame', async () => {
     await clickText('.view-switch button', '变体');
     await until(async () => (await count('.variant-cell:not(.empty)')) === 4, '4 cells');
     await until(() => page.$$eval('.vb-frame img', imgs => imgs.length === 4 && imgs.every(i => (i as HTMLImageElement).complete && (i as HTMLImageElement).naturalWidth > 0)), 'posters loaded');
   });
-  await step('agent panel is hidden in variant view', async () => {
-    assert.equal(await page.$eval('.agent-panel', el => (el as HTMLElement).offsetParent === null).catch(() => true), true);
+  await step('variant view keeps the agent chat in the right panel', async () => {
+    await until(async () => (await count('.agent-chat')) === 1, 'agent chat');
+    assert.equal(await page.$$eval('.agent-panel .view-switch button', b => (b[1] as HTMLButtonElement).disabled), true);
   });
   await step('hover mounts a playing preview, leaving removes it', async () => {
     await page.hover('.variant-cell[title^="kr-16x9"] .vb-frame');
@@ -205,11 +237,29 @@ try {
     assert.deepEqual([video.width, video.height], [360, 640]);
     assert.ok(probe.streams.some((s: { codec_type: string }) => s.codec_type === 'audio'), 'audio track');
   });
+  await step('agent edits through tools, checks a frame, and the change is undoable', async () => {
+    const before = (await doc()).editor.revision;
+    await page.type('.ac-compose textarea', '把日本横版的 CTA 改成日语并截图检查');
+    await page.keyboard.press('Enter');
+    await until(async () => (await count('.ac-reply')) === 1, 'final reply', 60_000);
+    const d = await doc();
+    assert.equal(d.variants!.items['jp-16x9']!.values?.cta, '今すぐ予約');
+    assert.equal(d.editor.revision, before + 1);
+    assert.equal(await count('.ac-step.done'), 3);
+    assert.equal(await count('.ac-frame'), 1);
+    const last = model.requests.at(-1)!;
+    assert.deepEqual(model.requests[0]!.tools.map(t => t.function.name).sort().slice(0, 3), ['apply_edit', 'edit_reference', 'history']);
+    assert.ok(last.messages.some(m => m.role === 'user' && Array.isArray(m.content) && (m.content as { type: string }[]).some(c => c.type === 'image_url')), 'frame sent back to the model');
+    const applied = last.messages.filter(m => m.role === 'tool')[1]!;
+    const txId = JSON.parse(String(applied.content)).transactionId as string;
+    assert.match(await page.$eval('.ac-reply', el => el.textContent ?? ''), new RegExp(txId));
+  });
   await step('no uncaught page errors', async () => {
     assert.deepEqual(pageErrors, []);
   });
 } finally {
   await browser?.close().catch(() => undefined);
+  model.server.close();
   await vite?.close().catch(() => undefined);
   runtime?.close();
   await rm(dir, { recursive: true, force: true });

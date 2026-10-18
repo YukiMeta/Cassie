@@ -118,6 +118,7 @@ export function compileScene(source: EventDocument, assetUrls: Record<string, st
   await Promise.all(Array.from(document.querySelectorAll('video')).map(video=>new Promise((resolve,reject)=>{
    const t=clamp(time-Number(video.dataset.start),0,Math.max(0,Number(video.dataset.duration)-1/data.fps))+Number(video.dataset.mediaStart);
    if(video.readyState>=2&&Math.abs(video.currentTime-t)<.00001)return resolve();
+   if(video.error)return reject(new Error('Media failed: '+video.id));
    const timer=setTimeout(()=>{cleanup();reject(new Error('Video seek timed out'))},10000);
    const cleanup=()=>{clearTimeout(timer);video.removeEventListener('seeked',done);video.removeEventListener('error',fail)};
    const done=()=>{cleanup();resolve()},fail=()=>{cleanup();reject(new Error('Media failed'))};

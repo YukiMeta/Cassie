@@ -26,7 +26,8 @@ import { llmParseIntent, type LlmConfig, type RenderConfig, type VisionConfig } 
 import type { DocumentEdit, EntityId, EventDocument, EventWorkspace, ResolvedEvent, SemanticEntity, SemanticProject, SubjectRegion, Variant } from "@cassie/spec";
 import { projectToJson } from "@cassie/editor-core";
 import * as rt from "./lib/runtime";
-import type { DetectedObject } from "./lib/runtime";
+import type { DetectedObject, SyncQuote } from "./lib/runtime";
+import { runAgent, type AgentMessage } from "./lib/agent";
 
 /**
  * 应用状态。所有变更走 EditorAdapter（可撤销），Harness 负责语义事务。
@@ -74,6 +75,7 @@ export interface AppState {
   /** 什么时候先问再跑模型任务：每次 / 只在要花钱时 / 从不 */
   confirmMode: ConfirmMode;
   confirm: ConfirmRequest | null;
+  agent: { messages: AgentMessage[]; running: boolean; error: string | null };
 }
 
 export type ConfirmMode = "always" | "paid" | "auto";
@@ -179,6 +181,7 @@ export function initStore(): void {
     selectedVariantId: null,
     confirmMode: loadConfirmMode(),
     confirm: null,
+    agent: { messages: [], running: false, error: null },
   };
   adapter.subscribe(() => emit());
   // 运行时工程优先；连不上再恢复本地 autosave / 演示项目。
@@ -411,6 +414,81 @@ export function answerConfirm(ok: boolean): void {
   settleConfirm = null;
 }
 
+/** 按确认档位决定是否先问；没配服务时只写任务包，不花钱。 */
+async function confirmQuote(quote: SyncQuote): Promise<boolean> {
+  const paid = Boolean(quote.provider);
+  if (!(state.confirmMode === "always" || (state.confirmMode === "paid" && paid))) return true;
+  return askConfirm({
+    title: `同步主体 · ${quote.items.length} 条变体`,
+    lines: [
+      ...quote.items.slice(0, 6).map((i) => `${i.variantId}：${i.subjects.join("、")} · ${i.seconds.toFixed(1)}s`),
+      ...(quote.items.length > 6 ? [`另外 ${quote.items.length - 6} 条…`] : []),
+      paid ? `由 ${quote.provider} 执行，共 ${quote.seconds.toFixed(1)} 秒视频` : "未配置同步服务，只生成任务包，不会产生费用",
+    ],
+    cost: quote.cost ? `约 ${quote.cost.amount} ${quote.cost.unit}` : paid ? "服务未声明价格" : null,
+    action: paid ? "开始同步" : "生成任务包",
+  });
+}
+
+let agentAbort: AbortController | null = null;
+const MUTATING_TOOLS = new Set(["apply_edit", "rollback", "subject_sync"]);
+
+/** 对话式 Agent：模型只能调用运行时的类型化工具，花钱的工具先走和界面相同的确认。 */
+export async function sendAgentMessage(text: string): Promise<void> {
+  const cfg = state.modelConfig.llm;
+  if (!cfg.enabled || !cfg.apiKey) {
+    state.agent = { ...state.agent, error: "先在「模型设置」里配置语义模型（LLM）" };
+    emit();
+    return;
+  }
+  if (state.agent.running || !text.trim()) return;
+  const messages = [...state.agent.messages, { role: "user" as const, text: text.trim() }];
+  state.agent = { messages, running: true, error: null };
+  emit();
+  agentAbort = new AbortController();
+  const signal = agentAbort.signal;
+  try {
+    const tools = await rt.listAgentTools();
+    await runAgent({
+      cfg,
+      tools,
+      history: messages,
+      signal,
+      onUpdate: () => {
+        state.agent = { ...state.agent, messages: [...messages] };
+        emit();
+      },
+      exec: async (call) => {
+        if (call.name === "subject_sync") {
+          const ids = Array.isArray(call.args.variantIds) ? call.args.variantIds.map(String) : undefined;
+          const quote = JSON.parse((await rt.callAgentTool("subject_sync_quote", ids ? { variantIds: ids } : {})).text) as SyncQuote;
+          if (quote.items.length && !(await confirmQuote(quote))) return { text: JSON.stringify({ ok: false, declined: true, message: "The human declined this subject sync." }), isError: true };
+          call = { ...call, args: { ...call.args, confirmed: true } };
+        }
+        const result = await rt.callAgentTool(call.name, call.args);
+        if (MUTATING_TOOLS.has(call.name) && !result.isError) await reloadRuntime();
+        return result;
+      },
+    });
+  } catch (e) {
+    if (!signal.aborted) state.agent = { ...state.agent, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    agentAbort = null;
+    state.agent = { ...state.agent, messages: [...messages], running: false };
+    emit();
+  }
+}
+
+export function stopAgent(): void {
+  agentAbort?.abort();
+}
+
+export function clearAgent(): void {
+  if (state.agent.running) return;
+  state.agent = { messages: [], running: false, error: null };
+  emit();
+}
+
 /** 主体同步：先报价，按确认档位决定是否先问，再逐条跑。没配服务时只写任务包，不花钱。 */
 export async function syncVariantSubjects(variantIds: string[]): Promise<unknown> {
   const quote = await rt.subjectSyncQuote(variantIds).catch((e: Error) => {
@@ -419,20 +497,7 @@ export async function syncVariantSubjects(variantIds: string[]): Promise<unknown
   });
   if (!quote) return;
   if (!quote.items.length) return setToast("这些变体的主体都已是最新");
-  const paid = Boolean(quote.provider);
-  if (state.confirmMode === "always" || (state.confirmMode === "paid" && paid)) {
-    const ok = await askConfirm({
-      title: `同步主体 · ${quote.items.length} 条变体`,
-      lines: [
-        ...quote.items.slice(0, 6).map((i) => `${i.variantId}：${i.subjects.join("、")} · ${i.seconds.toFixed(1)}s`),
-        ...(quote.items.length > 6 ? [`另外 ${quote.items.length - 6} 条…`] : []),
-        paid ? `由 ${quote.provider} 执行，共 ${quote.seconds.toFixed(1)} 秒视频` : "未配置同步服务，只生成任务包，不会产生费用",
-      ],
-      cost: quote.cost ? `约 ${quote.cost.amount} ${quote.cost.unit}` : paid ? "服务未声明价格" : null,
-      action: paid ? "开始同步" : "生成任务包",
-    });
-    if (!ok) return;
-  }
+  if (!(await confirmQuote(quote))) return;
   return runtimeTask("准备主体同步…", async () => {
     let last = "";
     for (const [n, item] of quote.items.entries()) {

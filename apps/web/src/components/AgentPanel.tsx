@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { AgentChat } from "./AgentChat";
 import { deriveLifecycle } from "@cassie/spec";
 import {
   cancelTransaction,
@@ -35,7 +36,35 @@ function transactionLabel(tx: EditTransaction | undefined): string {
   return tx.status;
 }
 
+/** 有运行时工程时，右栏默认是对话 Agent；变体视图下只保留 Agent。 */
 export function AgentPanel() {
+  const state = useAppState();
+  const [mode, setMode] = useState<"agent" | "semantic">("agent");
+  if (!state.runtime) return <SemanticPanel modeSwitch={null} />;
+  const variants = state.stageView === "variants";
+  const agentMode = mode === "agent" || variants;
+  const modeSwitch = (
+    <div className="view-switch">
+      <button className={agentMode ? "active" : ""} onClick={() => setMode("agent")}>Agent</button>
+      <button className={agentMode ? "" : "active"} disabled={variants} title={variants ? "语义指令作用于母版" : undefined} onClick={() => setMode("semantic")}>语义指令</button>
+    </div>
+  );
+  if (!agentMode) return <SemanticPanel modeSwitch={modeSwitch} />;
+  return (
+    <aside className="agent-panel panel">
+      <div className="agent-head">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <PanelGrip panel="agent" />
+          {modeSwitch}
+        </div>
+        {state.agent.running && <span className="agent-status">运行中</span>}
+      </div>
+      <AgentChat />
+    </aside>
+  );
+}
+
+function SemanticPanel({ modeSwitch }: { modeSwitch: ReactNode }) {
   const state = useAppState();
   const [input, setInput] = useState("把香水瓶替换成磨砂银瓶，从第一次出现到消失都保持同一个商品");
   const [scope, setScope] = useState<Scope>("entity_lifecycle");
@@ -95,10 +124,12 @@ export function AgentPanel() {
       <div className="agent-head">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <PanelGrip panel="agent" />
-          <div>
-            <span className="eyebrow">Subject Harness</span>
-            <strong>语义修改编译器</strong>
-          </div>
+          {modeSwitch ?? (
+            <div>
+              <span className="eyebrow">Subject Harness</span>
+              <strong>语义修改编译器</strong>
+            </div>
+          )}
         </div>
         <span className="agent-status">{state.runtime ? (regionPlan ? "局部主体计划" : transactionLabel(tx)) : transactionLabel(tx)}</span>
       </div>

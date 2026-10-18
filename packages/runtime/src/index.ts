@@ -12,3 +12,5 @@ export * from "./replace";
 export * from "./bundle";
 export * from "./variants";
 export * from "./subject-sync";
+export * from "./agent-tools";
+export * from "./mcp";

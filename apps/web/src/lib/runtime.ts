@@ -64,6 +64,26 @@ export function uploadSubjectReference(revision: number, body: { entityId: strin
   return call<EventWorkspace>("/api/subject-reference", { revision, ...body });
 }
 
+export interface AgentToolSpec {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+  paid?: boolean;
+}
+export interface AgentToolResult {
+  text: string;
+  image?: { data: string; mimeType: string };
+  isError?: boolean;
+}
+
+export function listAgentTools() {
+  return call<{ tools: AgentToolSpec[] }>("/api/tools").then((r) => r.tools);
+}
+
+export function callAgentTool(name: string, args: Record<string, unknown>) {
+  return call<AgentToolResult>("/api/tools/call", { name, args });
+}
+
 export interface SyncQuote {
   provider: string | null;
   items: { variantId: string; subjects: string[]; seconds: number }[];

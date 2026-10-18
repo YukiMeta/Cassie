@@ -137,7 +137,6 @@ export function App() {
   }
 
   const { slots, sizes } = state.layout;
-  const rightHidden = state.stageView === "variants" && Boolean(state.runtime?.document.variants) && slots.right === "agent";
   const renderPanel = (panel: PanelId) => {
     const Comp = PANEL_COMPONENTS[panel];
     return <Comp key={panel} />;
@@ -149,7 +148,7 @@ export function App() {
       <main
         className="app"
         style={{
-          gridTemplateColumns: `${sizes.leftW}px 12px minmax(0, 1fr) ${rightHidden ? "0px 0px" : `12px ${sizes.rightW}px`}`,
+          gridTemplateColumns: `${sizes.leftW}px 12px minmax(0, 1fr) 12px ${sizes.rightW}px`,
           gridTemplateRows: `minmax(0, 1fr) 10px ${sizes.bottomH}px`,
         }}
       >
@@ -172,10 +171,10 @@ export function App() {
         >
           {renderPanel(slots.center)}
         </div>
-        {!rightHidden && <div className="panel-divider right" onPointerDown={startResize("rightW")} title="拖动调整宽度" />}
+        <div className="panel-divider right" onPointerDown={startResize("rightW")} title="拖动调整宽度" />
         <div
           className={`slot ${dragTarget === "right" ? "drop-target" : ""} ${dragRef.current?.from === "right" ? "drag-source" : ""}`}
-          style={{ gridArea: "right", display: rightHidden ? "none" : undefined }}
+          style={{ gridArea: "right" }}
           ref={(el) => {
             slotEls.current.right = el;
           }}

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, staleSubjects, variantDocument, EventError } from "@cassie/harness";
 import type { EventDocument } from "@cassie/spec";
 import { importSubjectReference, planSubjectSync, runSubjectSync } from "./subject-sync";
+import { callAgentTool, closeAgentBrowser, subjectSyncQuote, toolManifest, type ToolContext } from "./agent-tools";
 import { readWorkspace, updateWorkspace } from "./store";
 import { compileScene, renderVideo, fontPath } from "./render";
 import { extractSubjectMatte, verifyMatteEdit, exportSubjectCutout } from "./matte";
@@ -19,6 +20,7 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
   const jobs = new Map<string, { status: "running" | "complete" | "failed"; message: string; path: string }>();
   const abort = new AbortController();
   let origin = "";
+  const toolContext: ToolContext = { file, baseUrl: async () => origin };
   const server = createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-store");
@@ -28,6 +30,7 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const path = requestUrl.pathname;
       if (req.method === "GET") {
+        if (path === "/api/tools") { send(res, { tools: toolManifest() }); return; }
         if (path === "/") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(await readFile(new URL("../../../apps/client/dist/index.html", import.meta.url))); return; }
         if (/^\/client\/[a-zA-Z0-9_.-]+$/.test(path)) { const name = path.slice(8); res.setHeader("Content-Type", name.endsWith(".css") ? "text/css" : name.endsWith(".js") ? "text/javascript" : "application/octet-stream"); res.end(await readFile(new URL("../../../apps/client/dist/" + name, import.meta.url))); return; }
         if (path === "/api/project") { const workspace = await readWorkspace(file); send(res, { workspace, events: resolveEvents(workspace.document), token }); return; }
@@ -112,17 +115,12 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
       }
       if (path === "/api/subject-sync/quote") {
         const d = (await readWorkspace(file)).document;
-        const ids = Array.isArray(body.variantIds) ? body.variantIds.map(String) : [];
-        const providerFile = process.env.CASSIE_SUBJECT_PROVIDER;
-        const provider = providerFile ? JSON.parse(await readFile(providerFile, "utf8")) : null;
-        const items = ids.flatMap((id: string) => {
-          const v = d.variants?.items[id];
-          const stale = v?.take ? staleSubjects(d, v) : [];
-          return stale.length ? [{ variantId: id, subjects: stale.map(e => d.semantic.entities[e]?.name ?? e), seconds: v!.take!.durationUs / 1e6 }] : [];
-        });
-        const seconds = items.reduce((s: number, i: { seconds: number }) => s + i.seconds, 0);
-        const rate = Number(provider?.pricing?.perSecond);
-        send(res, { provider: provider?.name ?? null, items, seconds, cost: rate > 0 ? { amount: Math.round(rate * seconds * 100) / 100, unit: String(provider.pricing.unit ?? "credits") } : null });
+        send(res, await subjectSyncQuote(d, (Array.isArray(body.variantIds) ? body.variantIds : []).map(String).filter((id: string) => d.variants?.items[id])));
+        return;
+      }
+      if (path === "/api/tools/call") {
+        const result = await callAgentTool(toolContext, String(body.name ?? ""), body.args && typeof body.args === "object" ? body.args : {});
+        send(res, result);
         return;
       }
       if (path === "/api/subject-sync") {
@@ -153,7 +151,7 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
   });
   await new Promise<void>((yes, no) => { server.once("error", no); server.listen(port, "127.0.0.1", yes); });
   const address = server.address(); origin = `http://127.0.0.1:${typeof address === "object" && address ? address.port : port}`;
-  return { server, url: origin, close: () => { abort.abort(); server.closeAllConnections(); server.close(); } };
+  return { server, url: origin, close: () => { abort.abort(); void closeAgentBrowser(); server.closeAllConnections(); server.close(); } };
 }
 /** Derived documents rename assets; serve each through the master media entry with the same bytes. */
 function sceneUrls(master: EventDocument, d: EventDocument): Record<string, string> {

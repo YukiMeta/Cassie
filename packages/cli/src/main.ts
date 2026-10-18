@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs, staleSubjects, variantDocument } from "@cassie/harness";
 import type { RegionKey, DocumentEdit, ActionEdit, ActionPlan, EventWorkspace, GenerationReceipt } from "@cassie/spec";
-import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, type TrackRequest, type VariantImportOptions } from "@cassie/runtime";
+import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, type TrackRequest, type VariantImportOptions, serveMcp } from "@cassie/runtime";
 
 const help = `Cassie — semantic action/event workspace
 
@@ -34,6 +34,7 @@ const help = `Cassie — semantic action/event workspace
   cassie scene <project.json> --out <directory>
   cassie render <project.json> --out <video.mp4> [--variant <id>]
   cassie serve <project.json> [--port 4317]
+  cassie mcp <project.json>          MCP server over stdio for coding agents (Claude Code, Cursor, Codex)
 
 Plans never mutate projects. Video edits cannot commit without reviewed media.
 init uses a procedural animation fixture; import prepares an actual video edit.
@@ -173,6 +174,7 @@ async function main() {
   if (command === "rollback") { const ws = await updateWorkspace(file, ws => rollbackAction(ws, option("transaction"))); output({ revision: ws.document.editor.revision, events: resolveEvents(ws.document) }); return; }
   if (command === "scene") { const ws = await readWorkspace(file); await stageScene(ws.document, dirname(file), resolve(option("out"))); output({ html: resolve(option("out"), "index.html") }); return; }
   if (command === "render") { const ws = await readWorkspace(file); await renderVideo(values.variant ? variantDocument(ws.document, values.variant) : ws.document, dirname(file), option("out"), m => process.stderr.write(m + "\n")); output({ output: resolve(option("out")), revision: ws.document.editor.revision }); return; }
+  if (command === "mcp") { await serveMcp(file, "0.1.0"); return; }
   if (command === "serve") {
     const port = values.port === undefined ? 4317 : Number(values.port);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new EventError("PORT", "Invalid port");

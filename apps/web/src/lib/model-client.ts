@@ -28,7 +28,7 @@ export interface RenderConfig {
   apiKey: string;
 }
 
-const isAnthropicEndpoint = (baseUrl: string) => /anthropic/i.test(baseUrl);
+export const isAnthropicEndpoint = (baseUrl: string) => /anthropic/i.test(baseUrl);
 
 /** 本地代理转发：请求体里带 baseUrl/apiKey（仅发给 localhost 代理） */
 async function proxyFetch<T>(path: string, payload: unknown): Promise<T> {
