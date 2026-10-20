@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, staleSubjects, variantDocument, EventError } from "@cassie/harness";
 import type { EventDocument } from "@cassie/spec";
 import { importSubjectReference, planSubjectSync, runSubjectSync } from "./subject-sync";
+import { doctor } from "./doctor";
 import { callAgentTool, clearSync, closeAgentBrowser, markSync, runningSyncs, subjectSyncQuote, toolManifest, type ToolContext } from "./agent-tools";
 import { readWorkspace, updateWorkspace } from "./store";
 import { compileScene, renderVideo, fontPath } from "./render";
@@ -31,6 +32,7 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
       const path = requestUrl.pathname;
       if (req.method === "GET") {
         if (path === "/api/tools") { send(res, { tools: toolManifest() }); return; }
+        if (path === "/api/doctor") { send(res, { checks: await doctor() }); return; }
         if (path === "/") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(await readFile(new URL("../../../apps/client/dist/index.html", import.meta.url))); return; }
         if (/^\/client\/[a-zA-Z0-9_.-]+$/.test(path)) { const name = path.slice(8); res.setHeader("Content-Type", name.endsWith(".css") ? "text/css" : name.endsWith(".js") ? "text/javascript" : "application/octet-stream"); res.end(await readFile(new URL("../../../apps/client/dist/" + name, import.meta.url))); return; }
         if (path === "/api/project") { const workspace = await readWorkspace(file); send(res, { workspace, events: resolveEvents(workspace.document), token }); return; }

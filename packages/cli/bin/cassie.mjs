@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { register } from 'node:module';
-register('tsx/esm', import.meta.url);
+import { register } from 'tsx/esm/api';
+register();
 await import('../src/main.ts');

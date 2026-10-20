@@ -29,6 +29,38 @@ export interface ConceptShotResult { shot: number; shotEventId: string; found: b
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 
+/** The SAM 3 extraction service (servers/sam3) if one answers; it tracks whole shots itself. */
+export async function sam3Service(): Promise<string | null> {
+  const url = (process.env.CASSIE_SAM3_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
+  try {
+    const r = await fetch(`${url}/health`, { signal: AbortSignal.timeout(800) });
+    const body = await r.json() as { ok?: boolean; model?: string };
+    return r.ok && body.ok ? url : null;
+  } catch { return null; }
+}
+
+type Sam3Track = { track_id: string | number; score: number; startUs: number; endUs: number; boxes: { t: number; box: [number, number, number, number] }[] };
+
+/** Cuts one shot's source window and asks SAM 3 for the concept; returns per-source-frame boxes of the best track. */
+async function sam3Shot(url: string, source: string, prompt: string, start: number, frames: number, rate: number, dir: string) {
+  const clip = join(dir, `sam3-${start}.mp4`);
+  await runProcess('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', source, '-vf', `select=between(n\\,${start}\\,${start + frames - 1}),setpts=N/${rate}/TB`, '-r', String(rate), '-an', '-c:v', 'libx264', '-crf', '12', clip], { timeoutMs: 300_000 });
+  const form = new FormData();
+  form.append('file', new Blob([await readFile(clip)], { type: 'video/mp4' }), 'shot.mp4');
+  form.append('prompts', JSON.stringify(prompt.split(',').map(p => p.trim()).filter(Boolean)));
+  const r = await fetch(`${url}/extract`, { method: 'POST', body: form, signal: AbortSignal.timeout(900_000) });
+  if (!r.ok) throw new EventError('DETECTOR', `SAM 3 service ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const tracks = ((await r.json()) as { candidates: { tracks: Sam3Track[] }[] }).candidates.flatMap(c => c.tracks);
+  const best = tracks.sort((a, b) => b.boxes.length * (b.score || 1) - a.boxes.length * (a.score || 1))[0];
+  if (!best?.boxes.length) return null;
+  const boxes: number[][] = Array.from({ length: frames }, () => []), confidence = Array<number>(frames).fill(0);
+  for (const { t, box } of best.boxes) {
+    const i = Math.round(t * rate / 1e6);
+    if (i >= 0 && i < frames) { boxes[i] = [box[0], box[1], box[2] - box[0], box[3] - box[1]].map(Math.round); confidence[i] = best.score || 1; }
+  }
+  return { boxes, confidence, score: best.score };
+}
+
 export async function detector(): Promise<Detector> {
   if (process.env.CASSIE_DETECTOR) return JSON.parse(await readFile(process.env.CASSIE_DETECTOR, 'utf8'));
   const python = process.env.CASSIE_DETECT_PYTHON ?? [join(repo, '.cassie-cache/detect-venv/bin/python')].find(existsSync);
@@ -63,6 +95,27 @@ export async function trackConcept(d: EventDocument, projectRoot: string, reques
       const start = Math.round(clip.sourceInUs * rate / 1e6), length = Math.round((clip.endUs - clip.startUs) * rate / 1e6);
       return { n, shot, layer, clip, samples: [...new Set(SAMPLES.map(p => start + Math.min(length - 1, Math.floor(length * p))))] };
     });
+    const sam3 = await sam3Service();
+    if (sam3) {
+      const edits: Extract<DocumentEdit, { kind: 'track-region' }>[] = [], results: ConceptShotResult[] = [];
+      for (const p of plan) {
+        progress(`SAM 3 跟踪「${request.prompt}」：镜头 ${p.n}`);
+        const source = await verifiedMedia(projectRoot, d.media[p.clip.assetId!]!);
+        const start = Math.round(p.clip.sourceInUs * rate / 1e6), frames = Math.round((p.clip.endUs - p.clip.startUs) * rate / 1e6);
+        const out = await sam3Shot(sam3, source, request.prompt, start, frames, rate, dir);
+        const first = out?.boxes.findIndex(b => b.length === 4) ?? -1;
+        if (!out || first < 0) { results.push({ shot: p.n, shotEventId: p.shot.id, found: false }); continue; }
+        const regionId = `${request.entityId}-${p.shot.id}`.slice(0, 60), prior = d.regions?.[regionId];
+        edits.push({ kind: 'track-region', name: request.name ?? request.prompt, region: {
+          id: regionId, entityId: request.entityId, eventId: prior?.eventId ?? `region-${regionId}`, layerId: p.layer.id,
+          sourceAssetId: p.clip.assetId!, sourceSha256: d.media[p.clip.assetId!]!.sha256, sourceStartFrame: start,
+          keys: [{ sourceFrame: start + first, box: out.boxes[first]! as [number, number, number, number] }],
+          boxes: out.boxes, confidence: out.confidence, backend: 'sam3', look: prior?.look ?? { color: '#2f7cf6', tint: 0.85, feather: 6 },
+        } });
+        results.push({ shot: p.n, shotEventId: p.shot.id, found: true, score: out.score, sourceFrame: start + first, frames: out.boxes.filter(b => b.length === 4).length });
+      }
+      return { edits, shots: results, backend: 'sam3' };
+    }
     progress(`抽帧识别「${request.prompt}」：${plan.length} 个镜头`);
     const frames: string[] = [];
     for (const p of plan) {

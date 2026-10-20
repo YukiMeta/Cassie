@@ -88,16 +88,33 @@ function fakeModel() {
   return { server, requests };
 }
 
+/** A stand-in SAM 3 service on the servers/sam3 contract: one track covering the lower middle of every frame. */
+function fakeSam3() {
+  let calls = 0;
+  const server: Server = createHttpServer(async (req, res) => {
+    for await (const _ of req) { /* drain the upload */ }
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/health') { res.end(JSON.stringify({ ok: true, model: 'sam3', loaded: true })); return; }
+    calls++;
+    const boxes = Array.from({ length: 96 }, (_, i) => ({ t: Math.round(i * 1e6 / 24), box: [200, 250, 440, 350] }));
+    res.end(JSON.stringify({ candidates: [{ concept: 'product', tracks: [{ track_id: 1, score: 0.9, startUs: 0, endUs: 4e6, boxes }] }] }));
+  });
+  return { server, calls: () => calls };
+}
+
 const results: { name: string; ok: boolean; ms: number; error?: string }[] = [];
 let runtime: Awaited<ReturnType<typeof serveWorkspace>> | undefined;
 let vite: Awaited<ReturnType<typeof createServer>> | undefined;
 let browser: Awaited<ReturnType<typeof puppeteer.launch>> | undefined;
 const model = fakeModel();
+const sam3 = fakeSam3();
 
 try {
   const project = await fixture();
   process.env.CASSIE_SUBJECT_PROVIDER = await fakeProvider();
   await ffmpeg(['-f', 'lavfi', '-i', 'color=c=orange:size=256x256', '-frames:v', '1', join(dir, 'ref.png')]);
+  await new Promise<void>(r => sam3.server.listen(0, '127.0.0.1', r));
+  process.env.CASSIE_SAM3_URL = `http://127.0.0.1:${(sam3.server.address() as { port: number }).port}`;
   runtime = await serveWorkspace(project, 0);
   process.env.CASSIE_RUNTIME = runtime.url;
   vite = await createServer({ configFile: join(repo, 'apps/web/vite.config.ts'), root: join(repo, 'apps/web'), logLevel: 'error', server: { port: 5290, strictPort: false } });
@@ -273,12 +290,37 @@ try {
     const txId = JSON.parse(String(applied.content)).transactionId as string;
     assert.match(await page.$eval('.ac-reply', el => el.textContent ?? ''), new RegExp(txId));
   });
+  await step('track_subject uses the SAM 3 service, and check_layout sees the CTA covering it', async () => {
+    const post = (url: string, body: unknown) => page.evaluate(async (u, b) => {
+      const { token } = await (await fetch('/rt/api/project')).json();
+      const r = await fetch('/rt' + u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cassie-Token': token }, body: JSON.stringify(b) });
+      return r.json();
+    }, url, body);
+    const tracked = JSON.parse((await post('/api/tools/call', { name: 'track_subject', args: { prompt: 'product', entityId: 'product', name: '产品' } })).text);
+    assert.equal(tracked.detector, 'sam3');
+    assert.equal(sam3.calls(), 1);
+    assert.equal(tracked.shots[0].found, true);
+    const region = Object.values((await doc()).regions ?? {}).find(r => r.entityId === 'product')!;
+    assert.equal(region.backend, 'sam3');
+    assert.equal(region.boxes.filter(b => b.length === 4).length, 96);
+    const check = JSON.parse((await post('/api/tools/call', { name: 'check_layout', args: { subject: 'overlay[var=cta]', avoid: 'entity#product' } })).text);
+    assert.equal(check.ok, false);
+    assert.equal(check.violations[0].avoid, 'product');
+    assert.ok(check.suggestions.length, 'a position that clears the product');
+  });
+  await step('settings shows what this machine can do', async () => {
+    await clickText('button', '⚙ 模型');
+    await until(async () => (await count('.doctor li')) >= 6, 'doctor rows');
+    assert.match(await page.$eval('.doctor', el => el.textContent ?? ''), /SAM 3 服务/);
+    await page.keyboard.press('Escape');
+  });
   await step('no uncaught page errors', async () => {
     assert.deepEqual(pageErrors, []);
   });
 } finally {
   await browser?.close().catch(() => undefined);
   model.server.close();
+  sam3.server.close();
   await vite?.close().catch(() => undefined);
   runtime?.close();
   await rm(dir, { recursive: true, force: true });

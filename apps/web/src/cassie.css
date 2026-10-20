@@ -1398,3 +1398,14 @@ body.resizing .app * { pointer-events: none; }
 .ac-compose textarea:focus{outline:none;border-color:var(--line-strong)}
 .ac-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}
 @keyframes ac-pulse{50%{opacity:.35}}
+
+.doctor { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.doctor li { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); }
+.doctor li strong { display: block; font-size: 12px; font-weight: 600; }
+.doctor li small { display: block; font-size: 11px; color: var(--text-dim, #8a8f98); margin-top: 2px; }
+.doctor li code { font-size: 11px; padding: 3px 6px; border-radius: 4px; background: rgba(0,0,0,0.35); color: #cfd3da; user-select: all; white-space: nowrap; }
+.doctor-mark { font-size: 12px; text-align: center; }
+.doctor li.ok .doctor-mark { color: #5fd38d; }
+.doctor li.bad .doctor-mark { color: #ff6b6b; }
+.doctor li.off .doctor-mark { color: #8a8f98; }
+.doctor-error, .doctor-wait { font-size: 12px; color: var(--text-dim, #8a8f98); margin: 8px 0 0; }

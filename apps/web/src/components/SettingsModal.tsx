@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { runtimeDoctor, type DoctorCheck } from "../lib/runtime";
 import { llmChat, renderHealth, type LlmConfig, type RenderConfig, type VisionConfig } from "../lib/model-client";
 import { saveModelConfig, setConfirmMode, setSettingsOpen, setToast, useAppState, type ConfirmMode, type ModelConfigState } from "../store";
 import { CONFIRM_MODES } from "./ConfirmDialog";
@@ -8,6 +9,32 @@ import { CONFIRM_MODES } from "./ConfirmDialog";
  * 语义 LLM（OpenAI 兼容 / Anthropic 格式任意端点）+ SAM 3 视觉提取服务。
  * key 只保存在本机 localStorage，请求经本机代理转发，不进仓库、不出本机。
  */
+/** What works on this machine, from the runtime, plus the browser-side language model setting. */
+function DoctorPanel({ llmReady }: { llmReady: boolean }) {
+  const [checks, setChecks] = useState<DoctorCheck[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { runtimeDoctor().then(r => setChecks(r.checks), e => setError(e instanceof Error ? e.message : String(e))); }, []);
+  const rows: DoctorCheck[] = [
+    { id: "llm", label: "语言模型（Agent）", ok: llmReady, needed: false, detail: llmReady ? "已配置" : "未配置", fix: "在下方「语义模型」填地址和 key", unlocks: "Agent 对话、语义指令" },
+    ...(checks ?? []),
+  ];
+  return (
+    <section className="settings-section">
+      <div className="settings-section-head"><div><strong>环境自检</strong><p>这台机器现在能做什么；缺的部分照右侧命令补上，重启 Cassie 生效。</p></div></div>
+      {error ? <p className="doctor-error">运行时未连接：{error}</p> : !checks ? <p className="doctor-wait">检查中…</p> : null}
+      <ul className="doctor">
+        {rows.map(c => (
+          <li key={c.id} className={c.ok ? "ok" : c.needed ? "bad" : "off"}>
+            <span className="doctor-mark">{c.ok ? "✓" : c.needed ? "✗" : "○"}</span>
+            <div><strong>{c.label}</strong><small>{c.ok ? c.detail : `${c.detail} · 缺少时：${c.unlocks}`}</small></div>
+            {!c.ok && c.fix ? <code>{c.fix}</code> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function SettingsModal() {
   const state = useAppState();
   const [draft, setDraft] = useState<ModelConfigState>(state.modelConfig);
@@ -82,6 +109,8 @@ export function SettingsModal() {
             ✕
           </button>
         </div>
+
+        <DoctorPanel llmReady={Boolean(state.modelConfig.llm.enabled && state.modelConfig.llm.apiKey)} />
 
         <section className="settings-section">
           <div className="settings-section-head">

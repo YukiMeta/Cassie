@@ -107,18 +107,20 @@ export async function subjectSyncQuote(d: EventDocument, ids: string[]) {
 let browser: Promise<{ newPage(): Promise<any>; close(): Promise<void> }> | null = null;
 
 /** One headless Chrome per process, reused across preview captures. */
+/** Puppeteer's own Chrome, or the newest one in the home cache when a sandboxed cache dir points elsewhere. */
+export async function chromeExecutable(): Promise<string | null> {
+  const { default: p } = await import("puppeteer");
+  const own = String(await p.executablePath());
+  if (existsSync(own)) return own;
+  const root = join(homedir(), ".cache", "puppeteer", "chrome");
+  const build = existsSync(root) ? readdirSync(root).sort().at(-1) : undefined;
+  const app = build && join(root, build, "chrome-mac-arm64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing");
+  const linux = build && join(root, build, "chrome-linux64", "chrome");
+  return [app, linux].find(f => f && existsSync(f)) || null;
+}
+
 async function chrome() {
-  browser ??= import("puppeteer").then(async ({ default: p }) => {
-    let executablePath: string | undefined;
-    if (!existsSync(String(await p.executablePath()))) {
-      const root = join(homedir(), ".cache", "puppeteer", "chrome");
-      const build = existsSync(root) ? readdirSync(root).sort().at(-1) : undefined;
-      const app = build && join(root, build, "chrome-mac-arm64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing");
-      const linux = build && join(root, build, "chrome-linux64", "chrome");
-      executablePath = [app, linux].find(f => f && existsSync(f)) || undefined;
-    }
-    return p.launch({ headless: true, executablePath, args: ["--autoplay-policy=no-user-gesture-required"] });
-  });
+  browser ??= import("puppeteer").then(async ({ default: p }) => p.launch({ headless: true, executablePath: (await chromeExecutable()) ?? undefined, args: ["--autoplay-policy=no-user-gesture-required"] }));
   return browser;
 }
 

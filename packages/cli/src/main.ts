@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs, staleSubjects, variantDocument } from "@cassie/harness";
 import type { RegionKey, DocumentEdit, ActionEdit, ActionPlan, EventWorkspace, GenerationReceipt } from "@cassie/spec";
-import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, type TrackRequest, type VariantImportOptions, serveMcp } from "@cassie/runtime";
+import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, type TrackRequest, type VariantImportOptions, serveMcp, doctor } from "@cassie/runtime";
 
 const help = `Cassie — semantic action/event workspace
 
@@ -34,6 +34,7 @@ const help = `Cassie — semantic action/event workspace
   cassie scene <project.json> --out <directory>
   cassie render <project.json> --out <video.mp4> [--variant <id>]
   cassie serve <project.json> [--port 4317]
+  cassie doctor                      What works on this machine and how to fix what does not
   cassie mcp <project.json>          MCP server over stdio for coding agents (Claude Code, Cursor, Codex)
 
 Plans never mutate projects. Video edits cannot commit without reviewed media.
@@ -45,6 +46,12 @@ async function main() {
   const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output", "variant", "prompt", "name", "scope"].map(k => [k, { type: "string" as const }])) });
   const [command, input] = positionals;
   if (!command || command === "help") { process.stdout.write(help); return; }
+  if (command === "doctor") {
+    const checks = await doctor();
+    for (const c of checks) console.log(`${c.ok ? "✓" : c.needed ? "✗" : "○"} ${c.label} — ${c.detail}${c.ok ? "" : `\n    缺少时：${c.unlocks}${c.fix ? `\n    修复：${c.fix}` : ""}`}`);
+    process.exitCode = checks.some(c => c.needed && !c.ok) ? 1 : 0;
+    return;
+  }
   if (!input || positionals.length > 2) throw new EventError("ARGUMENTS", "Expected a command and one input path. Run cassie help.");
   const option = (name: keyof typeof values) => { const v = values[name]; if (!v) throw new EventError("ARGUMENTS", `Missing --${name}`); return v as string; };
   const file = resolve(input);

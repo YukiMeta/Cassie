@@ -14,7 +14,10 @@
     "cassie": "node --import tsx packages/cli/src/main.ts",
     "test:integration": "node --import tsx scripts/integration.mts",
     "build:client": "node scripts/build-client.mjs",
-    "test:e2e": "node --import tsx scripts/e2e.mts"
+    "test:e2e": "node --import tsx scripts/e2e.mts",
+    "start": "tsx scripts/start.mts",
+    "setup:detector": "bash scripts/setup-detector.sh",
+    "doctor": "node packages/cli/bin/cassie.mjs doctor"
   },
   "devDependencies": {
     "@types/node": "26.6.4",
