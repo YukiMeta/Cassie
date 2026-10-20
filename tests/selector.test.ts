@@ -58,7 +58,7 @@ describe('selectors over entity × time × region', () => {
     expect(check.violations[0]).toMatchObject({ subject: 'cta', avoid: 'product' });
     const fix = check.suggestions[0]!;
     expect(fix.layerId).toBe('cta');
-    const fixed = edit(ws, { kind: 'set-layer', layerId: 'cta', patch: { y: fix.y } });
+    const fixed = edit(ws, { kind: 'set-layer', layerId: 'cta', patch: fix.patch });
     expect(checkNoOverlap(fixed.document, 'overlay#cta', 'entity#product', 16).ok).toBe(true);
     const nothing = checkNoOverlap(fixed.document, 'overlay#cta', 'entity:nonexistent');
     expect(nothing.ok).toBe(false);

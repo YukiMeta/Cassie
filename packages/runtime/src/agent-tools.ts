@@ -6,6 +6,7 @@ import { applyDocumentEdit, checkNoOverlap, diff, frameRuns, resolveSelector, Ev
 import type { DocumentEdit, EventDocument, Variant } from "@cassie/spec";
 import { readWorkspace, updateWorkspace } from "./store";
 import { renderVideo } from "./render";
+import { trackConcept } from "./concept";
 import { planSubjectSync, runSubjectSync, type SubjectProvider } from "./subject-sync";
 
 /**
@@ -194,6 +195,22 @@ export const AGENT_TOOLS: AgentTool[] = [
     },
   },
   {
+    name: "track_subject",
+    description: "Find a subject by name in every shot (or the listed shots) and track it frame by frame, so selectors like `entity#<entityId>` and check_layout can see it. Runs locally, no cost, takes a few seconds per shot. Shots where it is not found are reported, never guessed. Each tracked shot is one undoable transaction. Prompt is a short English noun; comma-separate synonyms, e.g. \"phone, smartphone\".",
+    inputSchema: obj({ prompt: str("What to find, e.g. \"phone\" or \"bottle\""), entityId: str("Lowercase id the subject will have, e.g. \"phone\"; reuse it to add shots to the same subject"), name: str("Display name, e.g. 手机"), shots: { type: "array", items: { type: "integer", minimum: 1 }, description: "1-based shot numbers; omit for all" } }, ["prompt", "entityId"]),
+    run: async (ctx, args) => {
+      const d = (await readWorkspace(ctx.file)).document;
+      const out = await trackConcept(d, dirname(ctx.file), { prompt: String(args.prompt), entityId: String(args.entityId), name: args.name ? String(args.name) : undefined, shots: Array.isArray(args.shots) ? args.shots.map(Number) : undefined });
+      const transactions: string[] = [];
+      for (const edit of out.edits) {
+        const ws = await updateWorkspace(ctx.file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
+        transactions.push(ws.transactions.at(-1)!.id);
+      }
+      const missed = out.shots.filter(s => !s.found).map(s => s.shot);
+      return json({ ok: out.edits.length > 0, entityId: String(args.entityId), detector: out.backend, shots: out.shots, transactions, revision: (await readWorkspace(ctx.file)).document.editor.revision, note: missed.length ? `Not found in shot ${missed.join(", ")}. Check those by eye with preview_frame before assuming the subject is absent.` : undefined });
+    },
+  },
+  {
     name: "select",
     description: "Resolve a selector to what is on screen: matching entities, overlays or shots with their frame ranges and a sample canvas box. Use it before editing to confirm you have the right thing, and tell the human how much it hits. Grammar: entity|overlay|clip[:concept][#id][ [shot=N]][ [var=x]][ [kind=k]][ t=a..b (seconds) | f=a..b (frames) | sf=a..b (source frames)]. Examples: `entity:bottle [shot=2]`, `overlay[var=cta]`, `clip [shot=3]`, `entity#product t=8..12`.",
     inputSchema: obj({ selector: str("Selector text"), variantId: str("Resolve on a variant's canvas; omit for the master") }, ["selector"]),
@@ -221,7 +238,7 @@ export const AGENT_TOOLS: AgentTool[] = [
         ok: check.ok,
         unchecked: check.unchecked,
         violations: check.violations.map(v => ({ ...v, frames: v.frames.map(([a, b]) => `${(a / fps).toFixed(2)}s–${(b / fps).toFixed(2)}s`) })),
-        suggestions: check.suggestions.map(s => ({ ...s, edit: { kind: "set-layer", layerId: s.layerId, patch: { y: s.y } } })),
+        suggestions: check.suggestions.map(s => ({ reason: s.reason, edit: { kind: "set-layer", layerId: s.layerId, patch: s.patch } })),
         note: args.variantId && check.suggestions.length ? "Suggestions are in the variant's canvas; master layer edits apply to every variant, so verify each aspect with preview_frame." : undefined,
       });
     },

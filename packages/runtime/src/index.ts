@@ -14,3 +14,4 @@ export * from "./variants";
 export * from "./subject-sync";
 export * from "./agent-tools";
 export * from "./mcp";
+export * from "./concept";

@@ -162,15 +162,18 @@ export interface LayoutCheck {
   unchecked?: string;
   /** Frames where `subject` touches `avoid` (grown by `pad` px), per avoided match. */
   violations: { subject: string; avoid: string; frames: [number, number][]; count: number }[];
-  /** A vertical move for overlay subjects that clears every avoided box on every frame, if one exists. */
-  suggestions: { layerId: string; y: number }[];
+  /**
+   * The nearest position for an overlay that clears every avoided box on every frame; `narrow` when it only
+   * fits by also reducing its width, which reflows the text, so it needs a look.
+   */
+  suggestions: { layerId: string; patch: { x: number; y: number; width?: number }; reason: "move" | "narrow" }[];
 }
 
 /** `no_overlap(subject, avoid, pad)`: the subject must stay `pad` canvas px clear of everything `avoid` selects. */
 export function checkNoOverlap(d: EventDocument, subject: string, avoid: string, pad = 0): LayoutCheck {
   const subjects = resolveSelector(d, subject), avoided = resolveSelector(d, avoid);
   const violations: LayoutCheck["violations"] = [], suggestions: LayoutCheck["suggestions"] = [];
-  const canvasH = d.editor.settings.height;
+  const canvasW = d.editor.settings.width, canvasH = d.editor.settings.height;
   if (!subjects.length) return { ok: false, unchecked: `${subject} matched nothing on screen`, violations, suggestions };
   if (!avoided.some(a => subjects.some(s => s.id !== a.id))) return { ok: false, unchecked: `${avoid} matched nothing on screen to keep clear of; track that subject first, or check by eye with preview_frame`, violations, suggestions };
   for (const s of subjects) {
@@ -182,13 +185,21 @@ export function checkNoOverlap(d: EventDocument, subject: string, avoid: string,
     }
     if (!hit || s.target !== "overlay") continue;
     const layer = d.scene.layers.find(l => l.id === s.id)!;
-    const blocked = [...s.boxes.keys()].flatMap(f => avoided.filter(a => a.id !== s.id).map(a => a.boxes.get(f)).filter((b): b is Box => !!b && b[0] < layer.x + layer.width + pad && layer.x - pad < b[0] + b[2]));
-    const margin = Math.round(canvasH * 0.04);
-    const candidates = [layer.y, ...blocked.flatMap(b => [b[1] + b[3] + pad, b[1] - pad - layer.height]), margin, canvasH - margin - layer.height]
-      .map(Math.round).filter(y => y >= 0 && y + layer.height <= canvasH)
-      .sort((p, q) => Math.abs(p - layer.y) - Math.abs(q - layer.y));
-    const y = candidates.find(y => blocked.every(b => !overlaps([layer.x, y, layer.width, layer.height], b, pad)));
-    if (y !== undefined) suggestions.push({ layerId: layer.id, y });
+    const blocked = [...s.boxes.keys()].flatMap(f => avoided.filter(a => a.id !== s.id).map(a => a.boxes.get(f)).filter((b): b is Box => !!b));
+    const clear = (box: Box) => blocked.every(b => !overlaps(box, b, pad));
+    const mx = Math.round(canvasW * 0.04), my = Math.round(canvasH * 0.04);
+    const near = (x: number, y: number) => Math.hypot(x - layer.x, y - layer.y);
+    const xs = [layer.x, mx, canvasW - mx - layer.width, ...blocked.flatMap(b => [b[0] + b[2] + pad, b[0] - pad - layer.width])].map(Math.round).filter(x => x >= 0 && x + layer.width <= canvasW);
+    const ys = [layer.y, my, canvasH - my - layer.height, ...blocked.flatMap(b => [b[1] + b[3] + pad, b[1] - pad - layer.height])].map(Math.round).filter(y => y >= 0 && y + layer.height <= canvasH);
+    const moves = xs.flatMap(x => ys.map(y => ({ x, y }))).filter(p => clear([p.x, p.y, layer.width, layer.height])).sort((p, q) => near(p.x, p.y) - near(q.x, q.y));
+    if (moves[0]) { suggestions.push({ layerId: layer.id, patch: moves[0], reason: "move" }); continue; }
+    // Nothing fits at this size: offer the widest clear column beside what must stay visible.
+    const left = Math.min(...blocked.map(b => b[0])) - pad, right = Math.max(...blocked.map(b => b[0] + b[2])) + pad;
+    const sides = [{ x: mx, width: Math.round(left - mx) }, { x: Math.round(right), width: Math.round(canvasW - mx - right) }].filter(c => c.width >= layer.width * 0.4).sort((a, b) => b.width - a.width);
+    for (const side of sides) {
+      const y = ys.find(y => clear([side.x, y, side.width, layer.height]));
+      if (y !== undefined) { suggestions.push({ layerId: layer.id, patch: { x: side.x, y, width: side.width }, reason: "narrow" }); break; }
+    }
   }
   return { ok: violations.length === 0, violations, suggestions };
 }
