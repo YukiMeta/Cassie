@@ -6,3 +6,4 @@ export * from "./events";
 export * from "./document-edits";
 export * from "./patch";
 export * from "./variant-derive";
+export * from "./selector";

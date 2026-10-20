@@ -266,7 +266,8 @@ try {
     assert.equal(await count('.ac-step.done'), 3);
     assert.equal(await count('.ac-frame'), 1);
     const last = model.requests.at(-1)!;
-    assert.deepEqual(model.requests[0]!.tools.map(t => t.function.name).sort().slice(0, 3), ['apply_edit', 'edit_reference', 'history']);
+    const offered = model.requests[0]!.tools.map(t => t.function.name);
+    for (const t of ['apply_edit', 'select', 'check_layout', 'preview_frame']) assert.ok(offered.includes(t), `model is offered ${t}`);
     assert.ok(last.messages.some(m => m.role === 'user' && Array.isArray(m.content) && (m.content as { type: string }[]).some(c => c.type === 'image_url')), 'frame sent back to the model');
     const applied = last.messages.filter(m => m.role === 'tool')[1]!;
     const txId = JSON.parse(String(applied.content)).transactionId as string;

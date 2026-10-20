@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { applyDocumentEdit, diff, EventError, planDocumentEdit, resolveEvents, resolveFrameCount, rollbackAction, staleSubjects, variableValues, variantDocument } from "@cassie/harness";
+import { applyDocumentEdit, checkNoOverlap, diff, frameRuns, resolveSelector, EventError, planDocumentEdit, resolveEvents, resolveFrameCount, rollbackAction, staleSubjects, variableValues, variantDocument } from "@cassie/harness";
 import type { DocumentEdit, EventDocument, Variant } from "@cassie/spec";
 import { readWorkspace, updateWorkspace } from "./store";
 import { renderVideo } from "./render";
@@ -191,6 +191,39 @@ export const AGENT_TOOLS: AgentTool[] = [
     run: async (ctx, args) => {
       const ws = await updateWorkspace(ctx.file, ws => rollbackAction(ws, String(args.transactionId)));
       return json({ ok: true, revision: ws.document.editor.revision });
+    },
+  },
+  {
+    name: "select",
+    description: "Resolve a selector to what is on screen: matching entities, overlays or shots with their frame ranges and a sample canvas box. Use it before editing to confirm you have the right thing, and tell the human how much it hits. Grammar: entity|overlay|clip[:concept][#id][ [shot=N]][ [var=x]][ [kind=k]][ t=a..b (seconds) | f=a..b (frames) | sf=a..b (source frames)]. Examples: `entity:bottle [shot=2]`, `overlay[var=cta]`, `clip [shot=3]`, `entity#product t=8..12`.",
+    inputSchema: obj({ selector: str("Selector text"), variantId: str("Resolve on a variant's canvas; omit for the master") }, ["selector"]),
+    run: async (ctx, args) => {
+      const d = (await readWorkspace(ctx.file)).document;
+      const scene = args.variantId ? variantDocument(d, String(args.variantId)) : d;
+      const fps = scene.frameRate.num / scene.frameRate.den;
+      const matches = resolveSelector(scene, String(args.selector)).map(m => {
+        const [first] = m.boxes, runs = frameRuns(m.boxes.keys());
+        return { target: m.target, id: m.id, name: m.name, frames: m.boxes.size, ranges: runs.map(([a, b]) => `${(a / fps).toFixed(2)}s–${(b / fps).toFixed(2)}s`), sampleBox: first ? { frame: first[0], box: first[1].map(Math.round) } : null };
+      });
+      return json({ canvas: [scene.editor.settings.width, scene.editor.settings.height], hits: matches.length, frames: matches.reduce((n, m) => n + m.frames, 0), matches });
+    },
+  },
+  {
+    name: "check_layout",
+    description: "Check a no_overlap rule: `subject` must stay `pad` px clear of everything `avoid` selects, on every frame both are on screen. Returns violating time ranges and, for overlays, a y position that clears them; apply it with set-layer, then preview_frame to confirm. Example: subject `overlay[var=cta]`, avoid `entity:product`.",
+    inputSchema: obj({ subject: str("Selector for what must move or stay clear"), avoid: str("Selector for what must not be covered"), pad: { type: "number", minimum: 0, description: "Clearance in canvas px, default 16" }, variantId: str("Check a variant's canvas; omit for the master") }, ["subject", "avoid"]),
+    run: async (ctx, args) => {
+      const d = (await readWorkspace(ctx.file)).document;
+      const scene = args.variantId ? variantDocument(d, String(args.variantId)) : d;
+      const fps = scene.frameRate.num / scene.frameRate.den;
+      const check = checkNoOverlap(scene, String(args.subject), String(args.avoid), args.pad === undefined ? 16 : Number(args.pad));
+      return json({
+        ok: check.ok,
+        unchecked: check.unchecked,
+        violations: check.violations.map(v => ({ ...v, frames: v.frames.map(([a, b]) => `${(a / fps).toFixed(2)}s–${(b / fps).toFixed(2)}s`) })),
+        suggestions: check.suggestions.map(s => ({ ...s, edit: { kind: "set-layer", layerId: s.layerId, patch: { y: s.y } } })),
+        note: args.variantId && check.suggestions.length ? "Suggestions are in the variant's canvas; master layer edits apply to every variant, so verify each aspect with preview_frame." : undefined,
+      });
     },
   },
   {

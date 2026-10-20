@@ -11,6 +11,8 @@ const TOOL_LABEL: Record<string, string> = {
   history: "查看历史",
   rollback: "回滚",
   preview_frame: "截取画面",
+  select: "定位画面内容",
+  check_layout: "检查遮挡",
   render_video: "渲染视频",
   subject_sync_quote: "主体同步报价",
   subject_sync: "同步主体",
@@ -25,6 +27,8 @@ const SUGGESTIONS = [
 function callSummary(name: string, args: Record<string, unknown>): string {
   const edit = args.edit as { kind?: string } | undefined;
   if (edit?.kind) return edit.kind;
+  if (name === "select") return String(args.selector ?? "");
+  if (name === "check_layout") return `${args.subject ?? ""} ⟂ ${args.avoid ?? ""}`;
   if (name === "preview_frame") return `${args.variantId ?? "母版"} · ${Number(args.seconds ?? 0).toFixed(1)}s`;
   if (name === "rollback") return String(args.transactionId ?? "").slice(0, 8);
   if (Array.isArray(args.variantIds)) return `${args.variantIds.length} 条`;
