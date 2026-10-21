@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromeExecutable } from './agent-tools';
 import { sam3Service } from './concept';
+import { jevKey } from './locate';
 import { runProcess } from './media';
 
 /**
@@ -41,9 +42,14 @@ export async function doctor(): Promise<DoctorCheck[]> {
     { id: 'chrome', label: '渲染用 Chrome', ok: !!chrome, needed: true, detail: chrome ? 'HyperFrames 预览与导出可用' : '未找到', fix: 'npx puppeteer browsers install chrome', unlocks: '截帧自检、导出成片' },
     { id: 'tracker', label: '本地逐帧跟踪（macOS）', ok: !!swift, needed: false, detail: swift ?? (process.platform === 'darwin' ? '缺少 Xcode 命令行工具' : '仅 macOS'), fix: process.platform === 'darwin' ? 'xcode-select --install' : undefined, unlocks: '没有 SAM 3 时的物体跟踪、人物抠像' },
     {
-      id: 'detector', label: '按名称识别物体', ok: !!sam3 || owl, needed: false,
-      detail: sam3 ? `SAM 3 服务 ${sam3}` : owl ? '本地 OWLv2（SAM 3 服务未运行时的备用）' : '没有 SAM 3 服务，也没有本地检测器',
-      fix: sam3 || owl ? undefined : 'npm run setup:detector  （或按 servers/sam3/README.md 启动 SAM 3 服务）', unlocks: 'track_subject、遮挡检查的数据来源',
+      id: 'locator', label: '定位（SAM 之前）', ok: !!jevKey() || owl, needed: false,
+      detail: jevKey() ? 'Jev Box：问「这个东西在哪」，失败后按经验放大或改问法' : owl ? '本地 OWLv2 定位（未配置 Jev）' : '没有 Jev key，也没有本地检测器',
+      fix: jevKey() || owl ? undefined : '设置 CASSIE_JEV_KEY，或 npm run setup:detector', unlocks: '找到种子框，再交给跟踪 / SAM 3',
+    },
+    {
+      id: 'detector', label: '跟踪 / 分割', ok: !!sam3 || !!swift, needed: false,
+      detail: sam3 ? `SAM 3 服务 ${sam3}` : swift ? '本地逐帧跟踪（macOS）' : '没有 SAM 3，也没有本地跟踪器',
+      fix: sam3 || swift ? undefined : '按 servers/sam3/README.md 启动 SAM 3，或 xcode-select --install', unlocks: '把定位到的框跟完整段镜头',
     },
     { id: 'provider', label: '换主体服务', ok: !!provider, needed: false, detail: provider ? '已配置（付费，每次先报价确认）' : '未配置：换主体只会生成请求包', fix: provider ? undefined : '设置 CASSIE_SUBJECT_PROVIDER 指向服务配置 JSON', unlocks: '按参考图替换变体里的主体' },
   ];

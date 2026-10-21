@@ -198,7 +198,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   },
   {
     name: "track_subject",
-    description: "Find a subject by name in every shot (or the listed shots) and track it frame by frame, so selectors like `entity#<entityId>` and check_layout can see it. Runs locally, no cost, takes a few seconds per shot. Shots where it is not found are reported, never guessed. Each tracked shot is one undoable transaction. Prompt is a short English noun; comma-separate synonyms, e.g. \"phone, smartphone\".",
+    description: "Locate a subject by name (Jev Box if CASSIE_JEV_KEY is set, else local OWLv2), retry with stored lessons (zoom / visible part / occlusion) when the first look misses, then track the seed box with SAM 3 or the native tracker. Shots where it is not found are reported, never guessed. Each tracked shot is one undoable transaction. Prompt is a short English noun; comma-separate synonyms, e.g. \"phone, smartphone\".",
     inputSchema: obj({ prompt: str("What to find, e.g. \"phone\" or \"bottle\""), entityId: str("Lowercase id the subject will have, e.g. \"phone\"; reuse it to add shots to the same subject"), name: str("Display name, e.g. 手机"), shots: { type: "array", items: { type: "integer", minimum: 1 }, description: "1-based shot numbers; omit for all" } }, ["prompt", "entityId"]),
     run: async (ctx, args) => {
       const d = (await readWorkspace(ctx.file)).document;

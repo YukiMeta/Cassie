@@ -15,4 +15,5 @@ export * from "./subject-sync";
 export * from "./agent-tools";
 export * from "./mcp";
 export * from "./concept";
+export * from "./locate";
 export * from "./doctor";

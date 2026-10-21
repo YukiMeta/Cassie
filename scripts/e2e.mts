@@ -89,6 +89,24 @@ function fakeModel() {
 }
 
 /** A stand-in SAM 3 service on the servers/sam3 contract: one track covering the lower middle of every frame. */
+/** A stand-in Jev 1.14: the thing is present, and the box is the lower-middle of the frame. */
+function fakeJev() {
+  let calls = 0;
+  const server: Server = createHttpServer(async (req, res) => {
+    for await (const _ of req) { /* drain */ }
+    calls++;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      model: 'jev-1.14.0',
+      answers: {
+        present: { type: 'noul', noul: true, confidence: 0.91 },
+        where: { type: 'box', box: { top: 0.69, bottom: 0.97, left: 0.31, right: 0.69 }, confidence: 0.88 },
+      },
+    }));
+  });
+  return { server, calls: () => calls };
+}
+
 function fakeSam3() {
   let calls = 0;
   const server: Server = createHttpServer(async (req, res) => {
@@ -108,13 +126,17 @@ let vite: Awaited<ReturnType<typeof createServer>> | undefined;
 let browser: Awaited<ReturnType<typeof puppeteer.launch>> | undefined;
 const model = fakeModel();
 const sam3 = fakeSam3();
+const jev = fakeJev();
 
 try {
   const project = await fixture();
   process.env.CASSIE_SUBJECT_PROVIDER = await fakeProvider();
   await ffmpeg(['-f', 'lavfi', '-i', 'color=c=orange:size=256x256', '-frames:v', '1', join(dir, 'ref.png')]);
   await new Promise<void>(r => sam3.server.listen(0, '127.0.0.1', r));
+  await new Promise<void>(r => jev.server.listen(0, '127.0.0.1', r));
   process.env.CASSIE_SAM3_URL = `http://127.0.0.1:${(sam3.server.address() as { port: number }).port}`;
+  process.env.CASSIE_JEV_KEY = 'e2e';
+  process.env.CASSIE_JEV_URL = `http://127.0.0.1:${(jev.server.address() as { port: number }).port}`;
   runtime = await serveWorkspace(project, 0);
   process.env.CASSIE_RUNTIME = runtime.url;
   vite = await createServer({ configFile: join(repo, 'apps/web/vite.config.ts'), root: join(repo, 'apps/web'), logLevel: 'error', server: { port: 5290, strictPort: false } });
@@ -297,11 +319,13 @@ try {
       return r.json();
     }, url, body);
     const tracked = JSON.parse((await post('/api/tools/call', { name: 'track_subject', args: { prompt: 'product', entityId: 'product', name: '产品' } })).text);
-    assert.equal(tracked.detector, 'sam3');
-    assert.equal(sam3.calls(), 1);
+    assert.match(String(tracked.detector), /jev/);
+    assert.match(String(tracked.detector), /sam3/);
+    assert.ok(jev.calls() >= 1, 'Jev located before SAM 3 tracked');
+    assert.ok(sam3.calls() >= 1, 'SAM 3 tracked after locate');
     assert.equal(tracked.shots[0].found, true);
     const region = Object.values((await doc()).regions ?? {}).find(r => r.entityId === 'product')!;
-    assert.equal(region.backend, 'sam3');
+    assert.match(region.backend, /sam3/);
     assert.equal(region.boxes.filter(b => b.length === 4).length, 96);
     const check = JSON.parse((await post('/api/tools/call', { name: 'check_layout', args: { subject: 'overlay[var=cta]', avoid: 'entity#product' } })).text);
     assert.equal(check.ok, false);
@@ -321,6 +345,7 @@ try {
   await browser?.close().catch(() => undefined);
   model.server.close();
   sam3.server.close();
+  jev.server.close();
   await vite?.close().catch(() => undefined);
   runtime?.close();
   await rm(dir, { recursive: true, force: true });
