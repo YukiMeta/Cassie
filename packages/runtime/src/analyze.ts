@@ -109,8 +109,8 @@ export async function groundVideo(projectFile:string, assetId:string, analysisId
   await writeJson(join(folder(projectFile,source.sha256),'latest-grounding.json'),grounding);
   return grounding;
 }
-export async function loadGrounding(projectFile: string, assetId: string): Promise<SemanticGrounding | null> {
-  const analysis = await loadAnalysis(projectFile,assetId);
+export async function loadGrounding(projectFile: string, assetId: string, currentAnalysis?: VideoAnalysis | null): Promise<SemanticGrounding | null> {
+  const analysis = currentAnalysis === undefined ? await loadAnalysis(projectFile,assetId) : currentAnalysis;
   if (!analysis) return null;
   try {
     const result = JSON.parse(await readFile(join(folder(projectFile,analysis.source.sha256),'latest-grounding.json'),'utf8')) as SemanticGrounding;

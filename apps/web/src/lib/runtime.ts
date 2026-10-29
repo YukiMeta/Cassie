@@ -174,3 +174,7 @@ export async function importAnalysisVideo(file: File): Promise<{ assetId: string
   if (!response.ok) throw new Error(data.message || '视频导入失败');
   return data;
 }
+
+export function fetchUnderstanding(assetId:string) {
+  return call<{analysis:import('@cassie/spec').VideoAnalysis|null;grounding:import('@cassie/spec').SemanticGrounding|null}>(`/api/understanding?assetId=${encodeURIComponent(assetId)}`);
+}

@@ -1184,3 +1184,18 @@ export function assetIdOf(state: AppState, entityId: EntityId): AssetId | null {
   }
   return null;
 }
+
+/** Reflect external CLI/MCP transactions without treating browser memory as authoritative. */
+export function watchRuntime():()=>void {
+  let stopped=false,reading=false;
+  const timer=setInterval(async()=>{
+    if(stopped||reading||!state.runtime||state.busy||state.agent.running)return;
+    reading=true;
+    try {
+      const next=await rt.fetchProject();
+      if(!stopped && next.workspace.document.editor.revision!==state.runtime?.document.editor.revision){state.playing=false;await reloadRuntime();}
+    }catch{/* Keep last known view while the local runtime reconnects. */}
+    finally{reading=false;}
+  },2000);
+  return()=>{stopped=true;clearInterval(timer);};
+}

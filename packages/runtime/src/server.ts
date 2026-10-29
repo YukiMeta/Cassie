@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { detectObjects } from "./detect";
 import { trackRegion } from "./track";
 import { locateInVariant } from "./variant-locate";
-import { analyzeVideo, groundVideo, loadAnalysis, sampleImages, analysisSource } from "./analyze";
+import { analyzeVideo, groundVideo, loadAnalysis, loadGrounding, sampleImages, analysisSource } from "./analyze";
 import { checkUnderstandingConfig } from "./analysis-model";
 
 export async function serveWorkspace(projectFile: string, port = 4317) {
@@ -36,6 +36,10 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const path = requestUrl.pathname;
       if (req.method === "GET") {
+        if (path === "/api/understanding") {
+          const assetId=requestUrl.searchParams.get("assetId") ?? "",analysis=await loadAnalysis(file,assetId);
+          send(res,{analysis,grounding:await loadGrounding(file,assetId,analysis)});return;
+        }
         if (path === "/api/analysis") { send(res, { analysis: await loadAnalysis(file, requestUrl.searchParams.get("assetId") ?? "") }); return; }
         if (path === "/api/analysis/frame") {
           const assetId = requestUrl.searchParams.get("assetId") ?? "", frame = Number(requestUrl.searchParams.get("frame"));

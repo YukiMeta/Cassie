@@ -14,6 +14,7 @@ import {
   useAppState,
 } from "../store";
 import { visionExtract, type ExtractedCandidate } from "../lib/model-client";
+import { providerWorkbench } from "../lib/workspace-mode";
 import { VideoUnderstanding } from "./VideoUnderstanding";
 import { PanelGrip } from "./PanelGrip";
 
@@ -52,7 +53,7 @@ export function Sidebar() {
             <strong>{TAB_LABELS[tab]![1]}</strong>
           </div>
         </div>
-        <label className="icon-btn" title="导入媒体">
+        {providerWorkbench && <label className="icon-btn" title="导入媒体">
           ＋
           <input
             type="file"
@@ -64,7 +65,7 @@ export function Sidebar() {
               e.target.value = "";
             }}
           />
-        </label>
+        </label>}
       </div>
 
       <div className="asset-scroll">

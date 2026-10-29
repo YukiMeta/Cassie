@@ -23,3 +23,7 @@ review/
 apps/client/
 servers/render/node_modules/
 .e2e/
+
+# Optional local understanding provider credentials
+model.local.json
+.cassie/*.local.json

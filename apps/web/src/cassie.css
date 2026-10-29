@@ -1433,3 +1433,22 @@ body.resizing .app * { pointer-events: none; }
 .understanding .source-preview { width: 100%; max-height: 240px; border-radius: 8px; background: #101014; margin-top: 8px; }
 .understanding-upload { display: block; cursor: pointer; text-align: center; }
 .understanding-upload input { display: block; max-width: 100%; margin-top: 6px; font-size: 11px; }
+/* The embedded result viewer must keep the video visible in a narrow agent workspace. */
+@media (max-width: 1050px) {
+  .agent-viewer.app { grid-template-columns: minmax(220px,280px) 10px minmax(0,1fr) !important; grid-template-areas: "left d1 center" "hdiv hdiv hdiv" "bottom bottom bottom"; }
+  .agent-viewer [data-slot="right"], .agent-viewer .panel-divider.right { display: none; }
+  .topbar { gap: 10px; }
+  .brand { min-width: 150px; }
+}
+@media (max-width: 700px) {
+  .agent-viewer.app { grid-template-columns: minmax(0,1fr) !important; grid-template-rows: minmax(180px,1fr) minmax(180px,0.9fr) minmax(110px,0.5fr) !important; grid-template-areas: "center" "left" "bottom"; gap: 8px; }
+  .agent-viewer .panel-divider, .agent-viewer .panel-grip { display: none; }
+  .project-meta { display: none; }
+  .top-actions { margin-left: auto; gap: 4px; }
+  .brand-copy span { display: none; }
+  .stage-toolbar { flex-wrap: wrap; gap: 4px; padding: 6px; }
+}
+@media (max-width: 700px) {
+  .agent-viewer .timeline-tools { display: none; }
+  .agent-viewer .timecode { white-space: nowrap; }
+}

@@ -20,3 +20,5 @@ export * from "./variant-locate";
 export * from "./doctor";
 
 export * from "./analyze";
+
+export * from "./understanding-workflow";
