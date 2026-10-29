@@ -338,7 +338,7 @@ export async function reloadRuntime(): Promise<void> {
   if (state.selectedRegionId && !document.regions?.[state.selectedRegionId]) state.selectedRegionId = null;
   if (state.selectedEntityId && !document.semantic.entities[state.selectedEntityId]) state.selectedEntityId = null;
   if (state.selectedVariantId && !document.variants?.items[state.selectedVariantId]) state.selectedVariantId = null;
-  if (!document.variants) state.stageView = "master";
+  state.stageView = "master"; // v0.1 keeps existing variant data but hides its UI.
   emit();
 }
 
@@ -1057,6 +1057,17 @@ export function hasKeyframeAtPlayhead(clipId: ClipId): boolean {
 // ---------- 导入 / 持久化 ----------
 
 export async function importMedia(files: FileList): Promise<void> {
+  if (state.runtime) {
+    await runtimeTask("导入理解素材…", async () => {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith("video/")) throw new Error("当前运行时入口只支持短视频理解素材");
+        await rt.importAnalysisVideo(file);
+      }
+      await reloadRuntime();
+      setToast("已添加理解素材；未加入成片时间线。可在左侧选择视频分析。");
+    });
+    return;
+  }
   const { adapter } = state;
   const videoTrack = adapter.getProject().tracks.find((t) => t.kind === "video")!;
   const audioTrack = adapter.getProject().tracks.find((t) => t.kind === "audio")!;

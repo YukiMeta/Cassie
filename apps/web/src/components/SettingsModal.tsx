@@ -16,7 +16,7 @@ function DoctorPanel({ llmReady }: { llmReady: boolean }) {
   useEffect(() => { runtimeDoctor().then(r => setChecks(r.checks), e => setError(e instanceof Error ? e.message : String(e))); }, []);
   const rows: DoctorCheck[] = [
     { id: "llm", label: "语言模型（Agent）", ok: llmReady, needed: false, detail: llmReady ? "已配置" : "未配置", fix: "在下方「语义模型」填地址和 key", unlocks: "Agent 对话、语义指令" },
-    ...(checks ?? []),
+    ...(checks ?? []).filter(c => c.id !== "provider"),
   ];
   return (
     <section className="settings-section">
@@ -116,7 +116,7 @@ export function SettingsModal() {
           <div className="settings-section-head">
             <div>
               <strong>模型任务确认</strong>
-              <p>改文字、审核这类本地操作从不询问；生成、主体同步这类模型任务按这里决定是否先确认。</p>
+              <p>编辑工具中的模型任务按这里决定是否先确认。Caption 与定位由左侧按钮主动发起，调用前会说明采样范围。</p>
             </div>
             <select className="confirm-mode" value={state.confirmMode} onChange={(e) => setConfirmMode(e.target.value as ConfirmMode)}>
               {CONFIRM_MODES.map(([id, text]) => <option key={id} value={id}>{text}</option>)}
@@ -127,12 +127,13 @@ export function SettingsModal() {
         <section className="settings-section">
           <div className="settings-section-head">
             <div>
-              <strong>语义模型（LLM）</strong>
-              <p>意图解析、主体命名与关系判定。支持 OpenAI 兼容端点与 Anthropic 格式端点。</p>
+              <strong>语义与视觉语言模型</strong>
+              <p>Caption 需要支持多图输入的视觉语言模型；普通文本模型不能理解视频。支持 OpenAI 兼容端点与 Anthropic 格式端点。连接测试只测试文本连通性。</p>
             </div>
             <label className="switch">
               <input
                 type="checkbox"
+                aria-label="启用语义与视觉语言模型"
                 checked={llm.enabled}
                 onChange={(e) => setLlm({ enabled: e.target.checked })}
               />
@@ -184,6 +185,7 @@ export function SettingsModal() {
             <label className="switch">
               <input
                 type="checkbox"
+                aria-label="启用主体分割服务"
                 checked={vision.enabled}
                 onChange={(e) => setVision({ enabled: e.target.checked })}
               />
@@ -231,6 +233,7 @@ export function SettingsModal() {
             <label className="switch">
               <input
                 type="checkbox"
+                aria-label="启用渲染服务"
                 checked={render.enabled}
                 onChange={(e) => setRender({ enabled: e.target.checked })}
               />
@@ -272,7 +275,7 @@ export function SettingsModal() {
 
         <div className="settings-privacy">
           🔒 API Key 只保存在本机 localStorage，请求经由本机代理转发；
-          未配置模型时全部能力走本地确定性实现，功能不受影响。
+          Caption 与语义定位需要视觉语言模型。采样图会发送到你配置的服务；未配置时仍可剪辑、撤销和导出。
         </div>
 
         <div className="modal-actions">

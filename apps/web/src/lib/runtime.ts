@@ -77,7 +77,7 @@ export interface AgentToolResult {
 }
 
 export function listAgentTools() {
-  return call<{ tools: AgentToolSpec[] }>("/api/tools").then((r) => r.tools);
+  return call<{ tools: AgentToolSpec[] }>("/api/tools").then((r) => r.tools.filter(t => !["list_variants", "locate_variant", "subject_sync_quote", "subject_sync"].includes(t.name)));
 }
 
 export function callAgentTool(name: string, args: Record<string, unknown>) {
@@ -138,4 +138,39 @@ export const posterUrl = (assetId: string, seconds = 1) => `/poster/${encodeURIC
 export interface DoctorCheck { id: string; label: string; ok: boolean; needed: boolean; detail: string; fix?: string; unlocks: string }
 export function runtimeDoctor() {
   return call<{ checks: DoctorCheck[] }>("/api/doctor");
+}
+
+// Source-grounded understanding does not create an editing transaction.
+export function fetchAnalysis(assetId: string) {
+  return call<{ analysis: import('@cassie/spec').VideoAnalysis | null }>(`/api/analysis?assetId=${encodeURIComponent(assetId)}`);
+}
+export async function analyzeSource(assetId: string, cfg: import('./model-client').LlmConfig, progress: (message: string) => void) {
+  const { id } = await call<{ id: string }>('/api/analysis', { assetId, cfg });
+  return analysisJob<import('@cassie/spec').VideoAnalysis>(id, progress);
+}
+export async function groundSource(assetId: string, analysisId: string, query: string, cfg: import('./model-client').LlmConfig, progress: (message: string) => void) {
+  const { id } = await call<{ id: string }>('/api/analysis/ground', { assetId, analysisId, query, cfg });
+  return analysisJob<import('@cassie/spec').SemanticGrounding>(id, progress);
+}
+async function analysisJob<T>(id: string, progress: (message:string)=>void): Promise<T> {
+  for (;;) {
+    const job = await call<{ status: string; message: string; result?: T }>(`/api/render/${id}`);
+    progress(job.message);
+    if (job.status === 'failed') throw new Error(job.message);
+    if (job.status === 'complete') {
+      if (!job.result) throw new Error('分析完成但结果缺失');
+      return job.result;
+    }
+    await new Promise(resolve => setTimeout(resolve, 800));
+  }
+}
+export const evidenceFrameUrl = (assetId: string, frame: number) => `/rt/api/analysis/frame?assetId=${encodeURIComponent(assetId)}&frame=${frame}`;
+
+/** Registers source media as an undoable library import, without changing the authored timeline. */
+export async function importAnalysisVideo(file: File): Promise<{ assetId: string }> {
+  if (file.size > 100_000_000) throw new Error('视频不能超过 100 MB');
+  const response = await fetch(BASE+'/api/analysis/import', { method:'POST', headers:{'Content-Type':'application/octet-stream','X-Cassie-Token':token,'X-Cassie-Filename':encodeURIComponent(file.name)}, body:file });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || '视频导入失败');
+  return data;
 }

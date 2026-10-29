@@ -17,7 +17,8 @@
     "test:e2e": "node --import tsx scripts/e2e.mts",
     "start": "tsx scripts/start.mts",
     "setup:detector": "bash scripts/setup-detector.sh",
-    "doctor": "node packages/cli/bin/cassie.mjs doctor"
+    "doctor": "node packages/cli/bin/cassie.mjs doctor",
+    "test:analysis": "node --import tsx scripts/test-analysis.mts"
   },
   "devDependencies": {
     "@types/node": "26.6.4",

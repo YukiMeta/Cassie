@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { applyDocumentEdit, checkNoOverlap, diff, frameRuns, resolveSelector, EventError, planDocumentEdit, resolveEvents, resolveFrameCount, rollbackAction, staleSubjects, variableValues, variantDocument } from "@cassie/harness";
 import type { DocumentEdit, EventDocument, Variant } from "@cassie/spec";
+import { loadAnalysis, loadGrounding } from "./analyze";
 import { readWorkspace, updateWorkspace } from "./store";
 import { renderVideo } from "./render";
 import { trackConcept } from "./concept";
@@ -55,6 +56,7 @@ function overview(d: EventDocument) {
   const tally = (pick: (v: Variant) => string) => items.reduce<Record<string, number>>((acc, v) => ({ ...acc, [pick(v)]: (acc[pick(v)] ?? 0) + 1 }), {});
   return {
     revision: d.editor.revision,
+    videoSources: Object.values(d.editor.assets).filter(a => a.kind === "video" && d.media[a.id]).map(a => ({ id: a.id, name:a.name, durationUs:a.durationUs })),
     canvas: `${d.editor.settings.width}x${d.editor.settings.height}`,
     fps: d.frameRate.num / d.frameRate.den,
     frames: resolveFrameCount(d),
@@ -132,6 +134,12 @@ export async function closeAgentBrowser() {
 }
 
 export const AGENT_TOOLS: AgentTool[] = [
+  {
+    name: "read_video_analysis",
+    description: "Read saved source-video observations and the latest query grounding created in the 理解 panel. These are source-frame observations, not timeline event ids or edit instructions. Model observations remain proposals. If absent, ask the user to analyze the source in the panel.",
+    inputSchema: obj({ assetId: str("Video source asset id from project_overview") }, ["assetId"]),
+    run: async (ctx,args) => json({ analysis: await loadAnalysis(ctx.file,String(args.assetId)), grounding: await loadGrounding(ctx.file,String(args.assetId)) }),
+  },
   {
     name: "project_overview",
     description: "Read the project: revision, canvas, events with frame ranges, layers, subjects, text variables, subject references and a variant summary. Call this first.",

@@ -1,5 +1,7 @@
 # Cassie
 
+当前短视频理解入口见 [≤15s 视频理解 v0.1](docs/short-video-understanding.md)：Caption、语义定位和源视频证据预览；默认隐藏变体入口，保留撤销和导出。
+
 当前开发方向见 **[Cassie v2 架构](docs/architecture-v2.md)**：原版 `apps/web` 做产品壳，本仓库运行时做引擎。CLI / 事件事务说明见 [studio-runtime.md](docs/studio-runtime.md)。以下愿景描述不代表全部能力已经实现。
 
 快速开始：`npm install` 后运行 `npm start [project.cassie.json]`（不带参数打开示例工程），会先自检再打开编辑器。`npm run doctor` 只看自检；缺少“按名称识别物体”时运行 `npm run setup:detector`，或按 [servers/sam3](servers/sam3/README.md) 启动 SAM 3 服务（在线时优先使用）。外部 coding agent 用 `cassie mcp <project.json>` 接入，说明见 [skills/cassie](skills/cassie/SKILL.md)。

@@ -14,9 +14,11 @@ import {
   useAppState,
 } from "../store";
 import { visionExtract, type ExtractedCandidate } from "../lib/model-client";
+import { VideoUnderstanding } from "./VideoUnderstanding";
 import { PanelGrip } from "./PanelGrip";
 
 const TAB_LABELS: Record<string, [string, string]> = {
+  analysis: ["Video Understanding", "短片理解与证据"],
   project: ["Project Context", "剧本与分镜"],
   assets: ["Persistent Library", "长期资产与 @引用"],
   layers: ["Semantic Graph", "主体、图层与锁"],
@@ -24,7 +26,7 @@ const TAB_LABELS: Record<string, [string, string]> = {
 
 export function Sidebar() {
   const state = useAppState();
-  const [tab, setTab] = useState<"project" | "assets" | "layers">("layers");
+  const [tab, setTab] = useState<"analysis" | "project" | "assets" | "layers">("analysis");
   const project = state.adapter.getProject();
   const entities = Object.values(state.semantic.entities);
   const refs = new Set(
@@ -36,9 +38,9 @@ export function Sidebar() {
   return (
     <aside className="sidebar panel">
       <div className="panel-tabs">
-        {(["project", "assets", "layers"] as const).map((t) => (
+        {(["analysis", "project", "layers"] as const).map((t) => (
           <button key={t} className={tab === t ? "active" : ""} data-tab={t} onClick={() => setTab(t)}>
-            {t === "project" ? "项目" : t === "assets" ? "资产" : "图层"}
+            {t === "analysis" ? "理解" : t === "project" ? "项目" : "图层"}
           </button>
         ))}
       </div>
@@ -66,6 +68,7 @@ export function Sidebar() {
       </div>
 
       <div className="asset-scroll">
+        {tab === "analysis" && <VideoUnderstanding />}
         {tab === "project" && (
           <div className="tab-content active">
             <div className="section-label">

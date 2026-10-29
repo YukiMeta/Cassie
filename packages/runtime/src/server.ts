@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { applyAction, planAction, applyDocumentEdit, planDocumentEdit, resolveEvents, rollbackAction, staleSubjects, variantDocument, EventError } from "@cassie/harness";
 import type { EventDocument } from "@cassie/spec";
@@ -9,17 +10,20 @@ import { callAgentTool, clearSync, closeAgentBrowser, markSync, runningSyncs, su
 import { readWorkspace, updateWorkspace } from "./store";
 import { compileScene, renderVideo, fontPath } from "./render";
 import { extractSubjectMatte, verifyMatteEdit, exportSubjectCutout } from "./matte";
-import { runProcess, verifiedMedia } from "./media";
+import { importVideo, runProcess, verifiedMedia } from "./media";
 import { existsSync } from "node:fs";
 import { detectObjects } from "./detect";
 import { trackRegion } from "./track";
 import { locateInVariant } from "./variant-locate";
+import { analyzeVideo, groundVideo, loadAnalysis, sampleImages, analysisSource } from "./analyze";
+import { checkUnderstandingConfig } from "./analysis-model";
 
 export async function serveWorkspace(projectFile: string, port = 4317) {
   const file = resolve(projectFile);
   await readWorkspace(file);
   const token = crypto.randomUUID();
-  const jobs = new Map<string, { status: "running" | "complete" | "failed"; message: string; path: string }>();
+  const jobs = new Map<string, { status: "running" | "complete" | "failed"; message: string; path: string; result?: unknown }>();
+  const analysisBusy = new Set<string>();
   const abort = new AbortController();
   let origin = "";
   const toolContext: ToolContext = { file, baseUrl: async () => origin };
@@ -32,6 +36,14 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const path = requestUrl.pathname;
       if (req.method === "GET") {
+        if (path === "/api/analysis") { send(res, { analysis: await loadAnalysis(file, requestUrl.searchParams.get("assetId") ?? "") }); return; }
+        if (path === "/api/analysis/frame") {
+          const assetId = requestUrl.searchParams.get("assetId") ?? "", frame = Number(requestUrl.searchParams.get("frame"));
+          const { source, file: input } = await analysisSource((await readWorkspace(file)).document, dirname(file), assetId);
+          if (!Number.isSafeInteger(frame) || frame < 0 || frame >= source.frames) throw new EventError("INVALID_FRAME", "Evidence frame is outside source");
+          const [image] = await sampleImages(input, [frame]);
+          res.setHeader("Content-Type", "image/jpeg"); res.end(Buffer.from(image!.data, "base64")); return;
+        }
         if (path === "/api/tools") { send(res, { tools: toolManifest() }); return; }
         if (path === "/api/doctor") { send(res, { checks: await doctor() }); return; }
         if (path === "/") { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(await readFile(new URL("../../../apps/client/dist/index.html", import.meta.url))); return; }
@@ -63,7 +75,7 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
         }
         if (path.startsWith("/api/render/")) {
           const job = jobs.get(path.slice(12)); if (!job) throw new EventError("NOT_FOUND", "Unknown render");
-          send(res, { status: job.status, message: job.message }); return;
+          send(res, { status: job.status, message: job.message, ...(job.result ? { result: job.result } : {}) }); return;
         }
         if (path.startsWith("/output/")) {
           const job = jobs.get(path.slice(8)); if (!job || job.status !== "complete") throw new EventError("NOT_FOUND", "Output not ready");
@@ -71,11 +83,44 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
         }
       }
       if (req.method !== "POST") { res.writeHead(404).end(); return; }
-      if (req.headers["x-cassie-token"] !== token || (req.headers.origin && req.headers.origin !== origin) || req.headers["content-type"] !== "application/json") throw new EventError("FORBIDDEN", "Expected same-origin JSON request with session token");
+      if (req.headers["x-cassie-token"] !== token || (req.headers.origin && req.headers.origin !== origin) || (req.headers["content-type"] !== "application/json" && !(path === "/api/analysis/import" && req.headers["content-type"] === "application/octet-stream"))) throw new EventError("FORBIDDEN", "Expected same-origin JSON request with session token");
+      if (path === "/api/analysis/import") {
+        const data: Buffer[] = []; let bytes = 0;
+        for await (const chunk of req) { bytes += chunk.length; if (bytes > 100_000_000) throw new EventError("BODY_LIMIT", "视频不能超过 100 MB"); data.push(chunk); }
+        const dir = await mkdtemp(join(tmpdir(),"cassie-upload-"));
+        try {
+          const source = join(dir,"source.mp4"); await writeFile(source,Buffer.concat(data));
+          const {media,info} = await importVideo(dirname(file),source);
+          const durationUs = Math.round(info.frames*1e6*info.frameRate.den/info.frameRate.num);
+          if (durationUs>15_001_000 || info.duration>15.001) throw new EventError("VIDEO_TOO_LONG","仅支持不超过 15 秒的源视频");
+          const assetId = `analysis-${crypto.randomUUID()}`;
+          const name = decodeURIComponent(String(req.headers["x-cassie-filename"] ?? "short-video.mp4")).slice(0,200);
+          const edit = { kind:"attach-analysis-source" as const,asset:{id:assetId,kind:"video" as const,name,durationUs,width:info.width,height:info.height},media };
+          const workspace = await updateWorkspace(file,ws=>applyDocumentEdit(ws,planDocumentEdit(ws.document,edit)));
+          send(res,{assetId,workspace});
+        } finally { await rm(dir,{recursive:true,force:true}); }
+        return;
+      }
       const chunks: Buffer[] = []; let size = 0;
       for await (const chunk of req) { size += chunk.length; if (size > 8_000_000) throw new EventError("BODY_LIMIT", "Request exceeds 8 MB"); chunks.push(chunk); }
       const body = JSON.parse(Buffer.concat(chunks).toString());
-      if (path === "/api/edit") { send(res, await updateWorkspace(file, async ws => { if(body.edit?.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),body.edit);if (ws.document.editor.revision !== body.revision) throw new EventError("STALE_PLAN", "Project changed; refresh before editing"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, body.edit)); })); return; }
+      if (path === "/api/analysis" || path === "/api/analysis/ground") {
+        const cfg = checkUnderstandingConfig(body.cfg), assetId = String(body.assetId ?? "");
+        const base = (await readWorkspace(file)).document, ref = base.media[assetId];
+        if (!ref || base.editor.assets[assetId]?.kind !== "video") throw new EventError("NO_VIDEO", "请选择视频素材");
+        if (analysisBusy.has(ref.sha256)) throw new EventError("JOB_BUSY", "这个视频正在分析或定位，请等待完成");
+        const id = crypto.randomUUID(), job: { status: "running"|"complete"|"failed"; message:string; path:string; result?:unknown } = { status:"running", message:"准备短视频理解…", path:"" };
+        jobs.set(id,job); analysisBusy.add(ref.sha256);
+        void (async () => {
+          const progress = (message:string) => { job.message=message; };
+          job.result = path === "/api/analysis"
+            ? await analyzeVideo(file,assetId,cfg,progress,abort.signal)
+            : await groundVideo(file,assetId,String(body.analysisId ?? ""),body.query,cfg,progress,abort.signal);
+          job.status="complete"; job.message="证据已保存；请核对模型观察";
+        })().catch(e=>{job.status="failed";job.message=e instanceof Error?e.message:"分析失败";}).finally(()=>analysisBusy.delete(ref.sha256));
+        send(res,{id},202); return;
+      }
+      if (path === "/api/edit") { send(res, await updateWorkspace(file, async ws => { if(body.edit?.kind==="attach-analysis-source")await verifiedMedia(dirname(file),body.edit.media);if(body.edit?.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),body.edit);if (ws.document.editor.revision !== body.revision) throw new EventError("STALE_PLAN", "Project changed; refresh before editing"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, body.edit)); })); return; }
       if (path === "/api/plan") { send(res, { plan: planAction((await readWorkspace(file)).document, body) }); return; }
       if (path === "/api/apply") { send(res, await updateWorkspace(file, ws => applyAction(ws, body.plan))); return; }
       if (path === "/api/rollback") { send(res, await updateWorkspace(file, ws => rollbackAction(ws, body.id))); return; }
