@@ -169,6 +169,13 @@ export interface Variant {
   take?: VariantTake;
   review: "pending" | "approved" | "rejected";
   note?: string;
+  /**
+   * Subjects re-located in this variant's own take, keyed by entity id. The master's lesson cache
+   * (locate-lessons.json) picks the probe (zoom / visible part / occlusion) and SAM 3 or the native
+   * tracker follows. A region whose sourceAssetId/sha256 no longer match the take is stale and is
+   * skipped by the derived variant document until locate_variant re-runs.
+   */
+  regions?: Record<string, SubjectRegion>;
 }
 /** Everything derived from one original: what stays, what changes per axis, and each variant's take. */
 export interface VariantSet {
@@ -205,6 +212,8 @@ export interface ActionEdit {
 export type DocumentEdit =
   | { kind: "attach-subject-matte"; eventId: string; matte: SubjectMatte; asset: MediaAsset; media: MediaReference }
   | { kind: "track-region"; region: SubjectRegion; name?: string }
+  /** Locates a master-tracked subject in one variant's take and records its region on the variant. */
+  | { kind: "track-variant-region"; variantId: string; region: SubjectRegion }
   | { kind: "set-region-replacement"; regionId: string; replacement: NonNullable<SubjectRegion["replacement"]> | null; asset?: MediaAsset; media?: MediaReference }
   | { kind: "set-region-look"; regionId: string; patch: Partial<SubjectRegion["look"]> }
   | { kind: "set-event-timing"; eventId: string; startFrame: number; durationFrames: number }

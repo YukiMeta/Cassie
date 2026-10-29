@@ -176,6 +176,13 @@ function validateVariants(d: EventDocument): void {
       const want = aspectRatio(variantAspect(set, item.coords));
       requireThat(!want || Math.abs(t.width / t.height - want) / want < 0.02, "VARIANT_ASPECT", `Variant ${id} take is ${t.width}x${t.height}, expected ${variantAspect(set, item.coords)}`);
       requireThat(!t.basis || Object.entries(t.basis).every(([e, s]) => d.semantic.entities[e] && /^[a-f0-9]{64}$/.test(s)), "INVALID_VARIANT", `Variant ${id} take basis`);
+      for (const [rid, r] of Object.entries(item.regions ?? {})) {
+        // A region whose take changed is stale: skipped here and by variantDocument until locate_variant re-runs.
+        if (r.sourceAssetId !== t.assetId || r.sourceSha256 !== t.sha256) continue;
+        requireThat(r && r.id === rid && typeof r.entityId === "string" && r.sourceStartFrame === 0 && Array.isArray(r.boxes) && r.boxes.length > 0 && Array.isArray(r.confidence) && r.confidence.length === r.boxes.length && r.keys.length > 0, "INVALID_VARIANT", `Variant ${id} region ${rid}`);
+        const takeFrames = Math.max(1, Math.floor(t.durationUs * d.frameRate.num / (1e6 * d.frameRate.den)));
+        requireThat(r.boxes.every(b => Array.isArray(b) && (b.length === 0 || (b.length === 4 && b.every(Number.isFinite) && b[2]! > 0 && b[3]! > 0))) && r.boxes.flatMap((b, i) => b.length ? [i] : []).at(-1)! < takeFrames, "INVALID_VARIANT", `Variant ${id} region boxes must lie inside the take`);
+      }
     }
   }
 }

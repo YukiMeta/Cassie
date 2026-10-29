@@ -99,6 +99,21 @@ export function variantDocument(d: EventDocument, variantId: string): EventDocum
     out.events.push({ id: e.id, entityId: layer.entityId, kind: authored.kind === "action" ? "reveal" : authored.kind, label: authored.label, start: { frame: e.startFrame }, durationFrames: Math.min(e.endFrame, frames) - e.startFrame, ...(e.text !== undefined ? { text: e.text } : {}) });
     out.scene.layers.push({ ...structuredClone(layer), x: Math.round(Math.max(0, Math.min(W - w, cx - w / 2))), y: Math.round(Math.max(0, Math.min(H - h, cy - h / 2))), width: Math.round(w), height: Math.round(h) });
   }
+  // Master-tracked subjects re-located in this take (locate_variant). Regions whose take no longer
+  // matches are stale and stay out of the derived canvas until the variant is located again.
+  for (const [rid, region] of Object.entries(v.regions ?? {})) {
+    if (region.sourceAssetId !== t.assetId || region.sourceSha256 !== t.sha256) continue;
+    const present = region.boxes.flatMap((b, i) => b.length ? [i] : []);
+    if (!present.length) continue;
+    const owner = master.semantic.entities[region.entityId];
+    if (owner && owner.kind !== "subject") continue;
+    const entity = owner
+      ? { ...structuredClone(owner), binds: [], attributes: { ...structuredClone(owner.attributes), regions: [rid] } }
+      : { id: region.entityId, name: region.entityId, kind: "subject" as const, lifecycle: { enterUs: 0, exitUs: frameToUs(d, frames) }, attributes: { regions: [rid] }, binds: [], locked: false };
+    out.semantic.entities[region.entityId] = entity;
+    out.events.push({ id: region.eventId, entityId: region.entityId, kind: "reveal", label: `${entity.name} · 变体`, start: { frame: present[0]! }, durationFrames: present.at(-1)! - present[0]! + 1 });
+    out.regions = { ...(out.regions ?? {}), [rid]: structuredClone(region) };
+  }
   validateDocument(out);
   return out;
 }

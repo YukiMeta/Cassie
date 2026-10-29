@@ -45,6 +45,24 @@ export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): D
     }
     next.regions = { ...next.regions, [r.id]: structuredClone(r) };
     writes.add(r.entityId);
+  } else if (edit.kind === "track-variant-region") {
+    const v = next.variants?.items[edit.variantId], t = v?.take;
+    if (!v) throw new EventError("MISSING_VARIANT", edit.variantId);
+    if (!t) throw new EventError("MISSING_TAKE", "Locate a subject on a variant that has a take");
+    const r = edit.region;
+    if (!r || typeof r.id !== "string" || !/^[a-z0-9-]+$/.test(r.id) || r.sourceAssetId !== t.assetId || r.sourceSha256 !== t.sha256 || r.sourceStartFrame !== 0) throw new EventError("INVALID_REGION", "A variant region must track the variant's own take from source frame 0");
+    const present = r.boxes.flatMap((b, i) => b.length ? [i] : []);
+    if (!present.length) throw new EventError("INVALID_REGION", "Tracking found no frames");
+    // The master must know this subject first; locate_in_variant migrates its tracked subjects.
+    const entity = next.semantic.entities[r.entityId];
+    if (!entity || entity.kind !== "subject" || !Array.isArray(entity.attributes.regions) || !entity.attributes.regions.length) throw new EventError("INVALID_REGION", `Track ${r.entityId} on the master before locating it in a variant`);
+    const takeFrames = Math.max(1, Math.floor(t.durationUs * next.frameRate.num / (1e6 * next.frameRate.den)));
+    if (present.at(-1)! >= takeFrames) throw new EventError("INVALID_REGION", `Region boxes must lie inside the take's ${takeFrames} frames`);
+    if (!r.keys.length || r.keys.some(k => !Number.isInteger(k.sourceFrame) || k.sourceFrame < 0 || k.sourceFrame >= takeFrames || k.box.length !== 4 || !k.box.every(Number.isFinite))) throw new EventError("INVALID_REGION", "Variant region keys must lie inside the take");
+    const existing = v.regions?.[r.id];
+    if (existing && existing.entityId !== r.entityId) throw new EventError("INVALID_REGION", "Re-locating must keep the region identity");
+    v.regions = { ...v.regions, [r.id]: structuredClone(r) };
+    writes.add(r.entityId);
   } else if (edit.kind === "set-region-replacement") {
     const r = next.regions?.[edit.regionId];
     if (!r) throw new EventError("MISSING_REGION", edit.regionId);
@@ -212,6 +230,7 @@ function editDetail(edit: DocumentEdit): string {
   switch (edit.kind) {
     case "set-layer": return edit.layerId;
     case "track-region": return edit.region.id;
+    case "track-variant-region": return `${edit.variantId}:${edit.region.id}`;
     case "set-region-look": case "set-region-replacement": return edit.regionId;
     case "set-variant-set": return edit.set.masterAssetId;
     case "add-variants": return edit.items.map(v => v.id).join(",");

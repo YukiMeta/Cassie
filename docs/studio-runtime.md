@@ -77,6 +77,8 @@ npm run cassie -- render ./work/project.json --out ./work/final.mp4
 
 `set-region-look` 修改区域颜色/强度/羽化，作用于整段生命周期，与其他编辑一样可撤销。当前只是外接框级着色，不是精细遮罩，也不替换物体；精细遮罩、开放词汇检测与模型重绘是后续步骤。
 
+`locate-variant project.json --variant <id> [--entity <id>]` 把母版上已跟踪的主体（如产品）迁移到变体新成片里：先用母版 `locate-lessons.json` 的经验（Propose–Probe–Compose），在变体取 3 帧试，命中后 SAM 3 或本机跟踪器逐帧跟完；结果写入变体自己的 `regions`，不污染母版。跟丢的帧不加猜。母版 CTA 位置通过 `selector` + `check_layout`（加 `variantId` 参数）在新画布上验证。
+
 ## 验证与发布状态
 
 ```sh

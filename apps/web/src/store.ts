@@ -431,7 +431,7 @@ async function confirmQuote(quote: SyncQuote): Promise<boolean> {
 }
 
 let agentAbort: AbortController | null = null;
-const MUTATING_TOOLS = new Set(["apply_edit", "rollback", "subject_sync"]);
+const MUTATING_TOOLS = new Set(["apply_edit", "rollback", "subject_sync", "locate_variant"]);
 
 /** 对话式 Agent：模型只能调用运行时的类型化工具，花钱的工具先走和界面相同的确认。 */
 export async function sendAgentMessage(text: string): Promise<void> {
@@ -513,6 +513,18 @@ export async function syncVariantSubjects(variantIds: string[]): Promise<unknown
 
 export function syncVariantSubject(variantId: string): Promise<unknown> {
   return syncVariantSubjects([variantId]);
+}
+
+/** 用母版定位经验（lessons）+ 种子框，在变体新成片里重新找到主体并跟踪。免费，不走 provider。 */
+export function locateVariantSubjects(variantId: string): Promise<unknown> {
+  return runtimeTask("重新定位主体…", async () => {
+    const message = await rt.variantLocate(variantId, (m) => {
+      state.busy = m;
+      emit();
+    });
+    await reloadRuntime();
+    setToast(message);
+  });
 }
 
 export function renderVariant(variantId: string): Promise<string | undefined> {

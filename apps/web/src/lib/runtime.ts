@@ -108,6 +108,18 @@ export async function subjectSync(variantId: string, onProgress: (message: strin
   }
 }
 
+/** Re-locates master-tracked subjects in one variant take (free: lessons from the master, no provider). */
+export async function variantLocate(variantId: string, onProgress: (message: string) => void): Promise<string> {
+  const { id } = await call<{ id: string }>("/api/variant-locate", { variantId });
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 800));
+    const job = await call<{ status: string; message: string }>(`/api/render/${id}`);
+    onProgress(job.message);
+    if (job.status === "failed") throw new Error(job.message);
+    if (job.status === "complete") return job.message;
+  }
+}
+
 export async function renderJob(onProgress: (message: string) => void, variantId?: string): Promise<string> {
   const { id } = await call<{ id: string }>("/api/render", variantId ? { variantId } : {});
   for (;;) {

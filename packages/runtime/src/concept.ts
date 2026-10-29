@@ -38,7 +38,7 @@ export async function sam3Service(): Promise<string | null> {
 type Sam3Track = { track_id: string | number; score: number; startUs: number; endUs: number; boxes: { t: number; box: [number, number, number, number] }[] };
 
 /** Cuts one shot's source window and asks SAM 3 for the concept; returns per-source-frame boxes of the best track. */
-async function sam3Shot(url: string, source: string, prompt: string, start: number, frames: number, rate: number, dir: string) {
+export async function sam3Shot(url: string, source: string, prompt: string, start: number, frames: number, rate: number, dir: string) {
   const clip = join(dir, `sam3-${start}.mp4`);
   await runProcess('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', source, '-vf', `select=between(n\\,${start}\\,${start + frames - 1}),setpts=N/${rate}/TB`, '-r', String(rate), '-an', '-c:v', 'libx264', '-crf', '12', clip], { timeoutMs: 300_000 });
   const form = new FormData();

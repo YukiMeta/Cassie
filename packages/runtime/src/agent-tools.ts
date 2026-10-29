@@ -8,6 +8,7 @@ import { readWorkspace, updateWorkspace } from "./store";
 import { renderVideo } from "./render";
 import { trackConcept } from "./concept";
 import { planSubjectSync, runSubjectSync, type SubjectProvider } from "./subject-sync";
+import { locateInVariant } from "./variant-locate";
 
 /**
  * One tool surface for every agent: the in-app chat calls it over HTTP, external coding agents over
@@ -210,6 +211,22 @@ export const AGENT_TOOLS: AgentTool[] = [
       }
       const missed = out.shots.filter(s => !s.found).map(s => s.shot);
       return json({ ok: out.edits.length > 0, entityId: String(args.entityId), detector: out.backend, shots: out.shots, transactions, revision: (await readWorkspace(ctx.file)).document.editor.revision, note: missed.length ? `Not found in shot ${missed.join(", ")}. Check those by eye with preview_frame before assuming the subject is absent.` : undefined });
+    },
+  },
+  {
+    name: "locate_variant",
+    description: "Re-find master-tracked subjects in one variant's take (Jev or OWLv2 with the master's stored lessons, then SAM 3 or the native tracker). Writes one undoable per-subject region on the variant, so select and check_layout work on that variant's canvas. Free; subjects not found are reported, never guessed.",
+    inputSchema: obj({ variantId: str("Variant to locate in; it must have a take"), entityIds: { type: "array", items: { type: "string" }, description: "Subject ids to relocate; omit for every subject tracked on the master" } }, ["variantId"]),
+    run: async (ctx, args) => {
+      const d = (await readWorkspace(ctx.file)).document;
+      const out = await locateInVariant(d, dirname(ctx.file), { variantId: String(args.variantId), ...(Array.isArray(args.entityIds) ? { entityIds: args.entityIds.map(String) } : {}) });
+      const transactions: string[] = [];
+      for (const edit of out.edits) {
+        const ws = await updateWorkspace(ctx.file, ws => applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)));
+        transactions.push(ws.transactions.at(-1)!.id);
+      }
+      const missed = out.entities.filter(e => !e.found).map(e => e.entityId);
+      return json({ ok: out.edits.length > 0, variantId: String(args.variantId), detector: out.backend, entities: out.entities, transactions, revision: (await readWorkspace(ctx.file)).document.editor.revision, note: missed.length ? `Not found in this take: ${missed.join(", ")}. Check those frames with preview_frame before assuming the subject is absent.` : undefined });
     },
   },
   {

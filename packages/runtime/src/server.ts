@@ -13,6 +13,7 @@ import { runProcess, verifiedMedia } from "./media";
 import { existsSync } from "node:fs";
 import { detectObjects } from "./detect";
 import { trackRegion } from "./track";
+import { locateInVariant } from "./variant-locate";
 
 export async function serveWorkspace(projectFile: string, port = 4317) {
   const file = resolve(projectFile);
@@ -114,6 +115,22 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
           send(res, await updateWorkspace(file, ws => { if (ws.document.editor.revision !== base.document.editor.revision) throw new EventError("STALE_PLAN", "Project changed; retry"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)); }));
         } finally { await rm(scratch, { force: true }); }
         return;
+      }
+      if (path === "/api/variant-locate") {
+        if ([...jobs.values()].some(j => j.status === "running")) throw new EventError("JOB_BUSY", "A media job is already running");
+        const base = await readWorkspace(file), variantId = String(body.variantId);
+        if (!base.document.variants?.items[variantId]?.take) throw new EventError("MISSING_TAKE", `Variant ${variantId} has no take`);
+        const id = crypto.randomUUID(), job = { status: "running" as "running" | "complete" | "failed", message: "定位主体…", path: "" }; jobs.set(id, job);
+        void (async () => {
+          const out = await locateInVariant(base.document, dirname(file), { variantId, ...(Array.isArray(body.entityIds) ? { entityIds: body.entityIds.map(String) } : {}) }, m => { job.message = m; });
+          for (const edit of out.edits) {
+            await updateWorkspace(file, ws => { if (ws.document.editor.revision !== base.document.editor.revision) throw new EventError("STALE_PLAN", "Project changed during locate"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)); });
+          }
+          const found = out.entities.filter(e => e.found).length, missed = out.entities.filter(e => !e.found);
+          job.status = "complete";
+          job.message = `已定位 ${found}/${out.entities.length} 个主体${missed.length ? `；未找到：${missed.map(m => m.entityId).join("、")}` : ""}`;
+        })().catch(e => { job.status = "failed"; job.message = e.message; });
+        send(res, { id }, 202); return;
       }
       if (path === "/api/subject-sync/quote") {
         const d = (await readWorkspace(file)).document;

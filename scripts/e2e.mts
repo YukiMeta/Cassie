@@ -332,6 +332,33 @@ try {
     assert.equal(check.violations[0].avoid, 'product');
     assert.ok(check.suggestions.length, 'a position that clears the product');
   });
+  await step('locate_variant re-finds the subject in a take and the variant canvas resolves it', async () => {
+    const post = (url: string, body: unknown) => page.evaluate(async (u, b) => {
+      const { token } = await (await fetch('/rt/api/project')).json();
+      const r = await fetch('/rt' + u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cassie-Token': token }, body: JSON.stringify(b) });
+      return r.json();
+    }, url, body);
+    const before = (await doc()).variants!.items['kr-9x16']!.regions;
+    const located = JSON.parse((await post('/api/tools/call', { name: 'locate_variant', args: { variantId: 'kr-9x16' } })).text);
+    assert.match(String(located.detector), /jev/);
+    assert.match(String(located.detector), /sam3/);
+    assert.equal(located.entities[0].found, true);
+    assert.equal(located.transactions.length, 1);
+    const d = await doc();
+    const region = d.variants!.items['kr-9x16']!.regions!['product'];
+    assert.ok(region, 'variant region written');
+    assert.equal(region.sourceAssetId, d.variants!.items['kr-9x16']!.take!.assetId);
+    assert.equal(region.boxes.filter(b => b.length === 4).length, 96);
+    assert.notEqual(before, region, 'region replaced per re-locate');
+    const sel = JSON.parse((await post('/api/tools/call', { name: 'select', args: { selector: 'entity:product', variantId: 'kr-9x16' } })).text);
+    assert.equal(sel.hits, 1);
+    assert.ok(sel.frames > 0, 'located subject is selectable on the variant canvas');
+    const check = JSON.parse((await post('/api/tools/call', { name: 'check_layout', args: { variantId: 'kr-9x16', subject: 'overlay#cta', avoid: 'entity:product' } })).text);
+    assert.equal(check.ok, true, 'CTA stays clear of the located subject on the variant canvas');
+    // re-locate is idempotent: identical result writes no second transaction
+    const again = JSON.parse((await post('/api/tools/call', { name: 'locate_variant', args: { variantId: 'kr-9x16' } })).text);
+    assert.equal(again.transactions.length, 0, 'unchanged locate writes nothing');
+  });
   await step('settings shows what this machine can do', async () => {
     await clickText('button', '⚙ 模型');
     await until(async () => (await count('.doctor li')) >= 6, 'doctor rows');

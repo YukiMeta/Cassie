@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs, staleSubjects, variantDocument } from "@cassie/harness";
 import type { RegionKey, DocumentEdit, ActionEdit, ActionPlan, EventWorkspace, GenerationReceipt } from "@cassie/spec";
-import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, type TrackRequest, type VariantImportOptions, serveMcp, doctor } from "@cassie/runtime";
+import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, locateInVariant, type TrackRequest, type VariantImportOptions, serveMcp, doctor } from "@cassie/runtime";
 
 const help = `Cassie — semantic action/event workspace
 
@@ -20,6 +20,7 @@ const help = `Cassie — semantic action/event workspace
   cassie replace-plan <project.json> --entity <id> --reference <image> --instruction <text> --out <directory>
   cassie replace <project.json> --region <id> --candidate <video.mp4> --provider-name <name> --review <note> --instruction <text> [--pad 24] [--keys candidate-keys.json]
   cassie track <project.json> --track <track.json>     (layerId, regionId, entityId, name, keys:[{sourceFrame,box:[x,y,w,h]}], look)
+  cassie locate-variant <project.json> --variant <id> [--entity <id1,id2>]   (re-locate master-tracked subjects in one take; lessons come from the master)
   cassie variants <project.json> --dir <takes/> --pattern "take-{market}-{aspect}-{location}.mp4" --provider-name <name> [--labels labels.json] [--brief <text>]
   cassie variant-rows <project.json> --out <rows.json> [--output "renders/{market}_{aspect}_{location}.mp4"]
   cassie subject-ref <project.json> --entity <id> --reference <image> --prompt <SAM 3 concept> --instruction <text> [--name <label>] [--scope axis=value,...]
@@ -84,6 +85,17 @@ async function main() {
     const ws=await updateWorkspace(file,async ws=>{if(ws.document.editor.revision!==base.document.editor.revision)throw new EventError("STALE_PLAN","Project changed while tracking; retry");return applyDocumentEdit(ws,planDocumentEdit(ws.document,edit))});
     const r=ws.document.regions![edit.region.id]!,event=resolveEvents(ws.document).find(e=>e.id===r.eventId)!;
     output({revision:ws.document.editor.revision,region:r.id,entity:r.entityId,timeline:[event.startFrame,event.endFrame],keys:r.keys.length,lowConfidenceFrames:r.confidence.filter((c,i)=>r.boxes[i]!.length&&c<0.3).length});return;
+  }
+  if (command === "locate-variant") {
+    const base = await readWorkspace(file), variantId = option("variant");
+    const out = await locateInVariant(base.document, dirname(file), { variantId, ...(values.entity ? { entityIds: String(values.entity).split(",").map(s => s.trim()).filter(Boolean) } : {}) }, m => process.stderr.write(m + "\n"));
+    const transactions: string[] = [];
+    for (const edit of out.edits) {
+      const ws = await updateWorkspace(file, async ws => { if (ws.document.editor.revision !== base.document.editor.revision) throw new EventError("STALE_PLAN", "Project changed during locate; retry"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit)); });
+      transactions.push(ws.transactions.at(-1)!.id);
+    }
+    output({ variantId, detector: out.backend, entities: out.entities, transactions, revision: (await readWorkspace(file)).document.editor.revision });
+    return;
   }
   if (command === "variants") {
     const labels = values.labels ? await read<{ axes?: Record<string, string>; values?: VariantImportOptions["labels"]; keep?: string[]; brief?: string }>(values.labels) : {};

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { EventDocument, Variant, VariantAxis, VariantSet } from "@cassie/spec";
 import { staleSubjects, subjectRefsFor, variableValues } from "@cassie/harness";
-import { renderVariant, reviewVariant, selectVariant, setStageView, setVariantValue, syncVariantSubject, syncVariantSubjects, uploadSubjectReference, useAppState } from "../store";
+import { renderVariant, reviewVariant, selectVariant, setStageView, setVariantValue, syncVariantSubject, syncVariantSubjects, uploadSubjectReference, locateVariantSubjects, useAppState } from "../store";
 import { mediaUrl, posterUrl } from "../lib/runtime";
 import { PanelGrip } from "./PanelGrip";
 
@@ -299,23 +299,31 @@ function Detail({ variant, set, doc, masterName, busy }: { variant: Variant; set
           <p className="vb-hint">留空则跟随母版。</p>
         </>
       )}
-      {tab === "subject" && (stale.length ? (
+      {tab === "subject" && (
         <>
-          {stale.map((id) => {
-            const r = subjectRefsFor(doc, variant)[id]!;
-            return (
-              <div key={id} className="subject-ref stale">
-                <img src={mediaUrl(r.assetId)} alt="" />
-                <div><b>{doc.semantic.entities[id]?.name}</b><small>{r.prompt}</small></div>
-              </div>
-            );
-          })}
-          <button className="primary-btn" disabled={busy} onClick={() => void syncVariantSubject(variant.id)}>同步主体</button>
-          <p className="vb-hint">只替换分割出的主体，其余像素保持不变。</p>
+          <h4>局部编辑迁移</h4>
+          <button className="tool-btn" disabled={busy || !variant.take} onClick={() => void locateVariantSubjects(variant.id)}>在新成片里重新定位主体</button>
+          <p className="vb-hint">用母版定位经验 + 种子框在新画面里找回母版跟踪过的主体（手机、产品…），再按新位置对齐 CTA。找不到会明确报告，不猜。免费。</p>
+          {Object.keys(variant.regions ?? {}).length > 0 && <p className="vb-note">已定位主体：{Object.values(variant.regions ?? {}).map((r) => doc.semantic.entities[r.entityId]?.name ?? r.entityId).join("、")}</p>}
+          {stale.length ? (
+            <>
+              {stale.map((id) => {
+                const r = subjectRefsFor(doc, variant)[id]!;
+                return (
+                  <div key={id} className="subject-ref stale">
+                    <img src={mediaUrl(r.assetId)} alt="" />
+                    <div><b>{doc.semantic.entities[id]?.name}</b><small>{r.prompt}</small></div>
+                  </div>
+                );
+              })}
+              <button className="primary-btn" disabled={busy} onClick={() => void syncVariantSubject(variant.id)}>同步主体</button>
+              <p className="vb-hint">只替换分割出的主体，其余像素保持不变。</p>
+            </>
+          ) : (
+            <p className="vb-note">主体与参考图一致。</p>
+          )}
         </>
-      ) : (
-        <p className="vb-note">主体与参考图一致。</p>
-      ))}
+      )}
       {tab === "brief" && (
         <>
           <p className="variant-brief">{brief || "—"}</p>

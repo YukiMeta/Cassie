@@ -88,9 +88,15 @@ export function lessonsFile(projectFile: string) {
 }
 
 export async function loadLessons(projectFile: string, entityId: string): Promise<LessonId[]> {
-  const empty: Record<string, { lessons: LessonId[] }> = {};
-  const all = await readFile(lessonsFile(projectFile), "utf8").then(t => JSON.parse(t) as Record<string, { lessons: LessonId[] }>, () => empty);
-  return all[entityId]?.lessons ?? [];
+  return (await loadLesson(projectFile, entityId)).lessons;
+}
+
+/** The stored prompt and lesson order for one entity; prompt is what locate used to find it. */
+export async function loadLesson(projectFile: string, entityId: string): Promise<{ prompt?: string; lessons: LessonId[] }> {
+  const empty: Record<string, { prompt?: string; lessons: LessonId[] }> = {};
+  const file = lessonsFile(projectFile);
+  const all = await readFile(file, "utf8").then(t => JSON.parse(t) as Record<string, { prompt?: string; lessons: LessonId[] }>, () => empty);
+  return all[entityId] ?? { lessons: [] };
 }
 
 export async function rememberLesson(projectFile: string, entityId: string, prompt: string, lesson: LessonId) {

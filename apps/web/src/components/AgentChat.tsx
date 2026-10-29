@@ -13,6 +13,7 @@ const TOOL_LABEL: Record<string, string> = {
   preview_frame: "截取画面",
   select: "定位画面内容",
   track_subject: "识别并跟踪",
+  locate_variant: "变体迁移定位",
   check_layout: "检查遮挡",
   render_video: "渲染视频",
   subject_sync_quote: "主体同步报价",
@@ -29,6 +30,7 @@ function callSummary(name: string, args: Record<string, unknown>): string {
   const edit = args.edit as { kind?: string } | undefined;
   if (edit?.kind) return edit.kind;
   if (name === "track_subject") return String(args.name ?? args.prompt ?? "");
+  if (name === "locate_variant") return String(args.variantId ?? "");
   if (name === "select") return String(args.selector ?? "");
   if (name === "check_layout") return `${args.subject ?? ""} ⟂ ${args.avoid ?? ""}`;
   if (name === "preview_frame") return `${args.variantId ?? "母版"} · ${Number(args.seconds ?? 0).toFixed(1)}s`;
