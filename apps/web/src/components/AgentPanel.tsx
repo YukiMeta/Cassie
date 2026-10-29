@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { providerWorkbench } from "../lib/workspace-mode";
 import { AgentChat } from "./AgentChat";
 import { deriveLifecycle } from "@cassie/spec";
 import {
@@ -40,6 +41,7 @@ function transactionLabel(tx: EditTransaction | undefined): string {
 export function AgentPanel() {
   const state = useAppState();
   const [mode, setMode] = useState<"agent" | "semantic">("agent");
+  if (!providerWorkbench) return <AgentActivity />;
   if (!state.runtime) return <SemanticPanel modeSwitch={null} />;
   const variants = state.stageView === "variants";
   const agentMode = mode === "agent" || variants;
@@ -303,4 +305,19 @@ function SemanticPanel({ modeSwitch }: { modeSwitch: ReactNode }) {
       </div>
     </aside>
   );
+}
+
+/** Agent work is driven by local tools; this is a review surface, not another mandatory chat/config workflow. */
+function AgentActivity() {
+  const state=useAppState();
+  const history=state.runtime?.workspace.transactions.slice(-8).reverse() ?? [];
+  return <aside className="agent-panel panel">
+    <div className="agent-head"><PanelGrip panel="agent"/><strong>Agent 工作区</strong><span>版本 {state.runtime?.document.editor.revision ?? 0}</span></div>
+    <div className="agent-body">
+      <p>视频理解和语义定位由 Agent 执行。这里展示工程变更，左侧展示观察和证据。</p>
+      <div className="section-label"><span>最近变更</span><span>{history.length}</span></div>
+      {!history.length && <p>暂无工程修改。分析和定位不会写入剪辑历史。</p>}
+      {history.map(t=><div className="context-card" key={t.id}><strong>{t.edit.kind}</strong><p>{t.status==='rolled-back'?'已撤销':'已提交'} · revision {t.baseRevision}</p><small>{t.id}</small></div>)}
+    </div>
+  </aside>;
 }

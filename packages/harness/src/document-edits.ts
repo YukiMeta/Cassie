@@ -8,7 +8,11 @@ export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): D
   const next = structuredClone(document);
   const writes = new Set<string>();
   const commands: EditorCommand[] = [];
-  if (edit.kind === "attach-subject-matte") {
+  if (edit.kind === "attach-analysis-source") {
+    if (!edit.asset || edit.asset.kind !== "video" || !edit.media || typeof edit.asset.id !== "string" || !/^[a-z0-9-]+$/.test(edit.asset.id) || next.editor.assets[edit.asset.id] || !(edit.asset.durationUs > 0 && edit.asset.durationUs <= 15_001_000) || !/^[a-f0-9]{64}$/.test(edit.media.sha256)) throw new EventError("INVALID_ANALYSIS_SOURCE", "A new short video asset and its source hash are required");
+    next.editor.assets[edit.asset.id] = structuredClone(edit.asset);
+    next.media[edit.asset.id] = structuredClone(edit.media);
+  } else if (edit.kind === "attach-subject-matte") {
     const event=next.events.find(e=>e.id===edit.eventId);
     if(!event || !event.clipId || findClip(next.editor,event.clipId)?.clip.assetId!==edit.matte.sourceAssetId || edit.matte.eventId!==event.id || edit.matte.entityId!==event.entityId || edit.asset.id!==edit.matte.maskAssetId || next.editor.assets[edit.asset.id]) throw new EventError("INVALID_MATTE","Matte must identify its event and a new asset");
     next.editor.assets[edit.asset.id]=structuredClone(edit.asset);
@@ -228,6 +232,7 @@ export function planDocumentEdit(document: EventDocument, edit: DocumentEdit): D
 
 function editDetail(edit: DocumentEdit): string {
   switch (edit.kind) {
+    case "attach-analysis-source": return edit.asset.id;
     case "set-layer": return edit.layerId;
     case "track-region": return edit.region.id;
     case "track-variant-region": return `${edit.variantId}:${edit.region.id}`;

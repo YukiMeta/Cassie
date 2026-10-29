@@ -13,7 +13,8 @@ try {
  const get=async(path:string)=>(await fetch(server!.url+path)).json();
  const initial=await get('/api/project');
  const post=async(path:string,body:unknown,token=initial.token)=>fetch(server!.url+path,{method:'POST',headers:{'Content-Type':'application/json','X-Cassie-Token':token},body:JSON.stringify(body)});
- assert.equal((await fetch(server.url)).status,200);
+ // apps/web (Vite) is the product shell; the runtime serves its compiled preview at /scene.
+ assert.equal((await fetch(server.url+'/scene')).status,200);
  assert.equal((await post('/api/edit',{},'bad')).status,403);
  const response=await post('/api/edit',{revision:0,edit:{kind:'set-event-timing',eventId:'greeting',startFrame:30,durationFrames:60}});
  assert.equal(response.status,200);const moved=await response.json();

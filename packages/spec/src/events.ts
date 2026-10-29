@@ -210,6 +210,7 @@ export interface ActionEdit {
   durationFrames?: number;
 }
 export type DocumentEdit =
+  | { kind: "attach-analysis-source"; asset: MediaAsset; media: MediaReference }
   | { kind: "attach-subject-matte"; eventId: string; matte: SubjectMatte; asset: MediaAsset; media: MediaReference }
   | { kind: "track-region"; region: SubjectRegion; name?: string }
   /** Locates a master-tracked subject in one variant's take and records its region on the variant. */

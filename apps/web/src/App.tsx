@@ -1,6 +1,8 @@
+import { providerWorkbench } from "./lib/workspace-mode";
 import { useEffect, useRef, useState, type JSX } from "react";
 import {
   bootDemo,
+  watchRuntime,
   redo,
   setSlotSize,
   swapSlots,
@@ -34,6 +36,8 @@ export function App() {
   const slotEls = useRef<Partial<Record<SlotId, HTMLDivElement | null>>>({});
   const dragRef = useRef<{ panel: PanelId; from: SlotId } | null>(null);
   const [dragTarget, setDragTarget] = useState<SlotId | null>(null);
+
+  useEffect(() => watchRuntime(), []);
 
   // ⌘Z / ⇧⌘Z 全局撤销重做；空格 播放/暂停
   useEffect(() => {
@@ -146,7 +150,7 @@ export function App() {
     <LayoutContext.Provider value={{ startPanelDrag }}>
       <Topbar />
       <main
-        className="app"
+        className={`app ${providerWorkbench ? "provider-workbench" : "agent-viewer"}`}
         style={{
           gridTemplateColumns: `${sizes.leftW}px 12px minmax(0, 1fr) 12px ${sizes.rightW}px`,
           gridTemplateRows: `minmax(0, 1fr) 10px ${sizes.bottomH}px`,
@@ -154,6 +158,7 @@ export function App() {
       >
         <div
           className={`slot ${dragTarget === "left" ? "drop-target" : ""} ${dragRef.current?.from === "left" ? "drag-source" : ""}`}
+          data-slot="left"
           style={{ gridArea: "left" }}
           ref={(el) => {
             slotEls.current.left = el;
@@ -164,6 +169,7 @@ export function App() {
         <div className="panel-divider left" onPointerDown={startResize("leftW")} title="拖动调整宽度" />
         <div
           className={`slot ${dragTarget === "center" ? "drop-target" : ""} ${dragRef.current?.from === "center" ? "drag-source" : ""}`}
+          data-slot="center"
           style={{ gridArea: "center" }}
           ref={(el) => {
             slotEls.current.center = el;
@@ -174,6 +180,7 @@ export function App() {
         <div className="panel-divider right" onPointerDown={startResize("rightW")} title="拖动调整宽度" />
         <div
           className={`slot ${dragTarget === "right" ? "drop-target" : ""} ${dragRef.current?.from === "right" ? "drag-source" : ""}`}
+          data-slot="right"
           style={{ gridArea: "right" }}
           ref={(el) => {
             slotEls.current.right = el;
@@ -184,6 +191,7 @@ export function App() {
         <div className="panel-divider bottom" onPointerDown={startResize("bottomH")} title="拖动调整高度" />
         <div
           className={`slot ${dragTarget === "bottom" ? "drop-target" : ""} ${dragRef.current?.from === "bottom" ? "drag-source" : ""}`}
+          data-slot="bottom"
           style={{ gridArea: "bottom" }}
           ref={(el) => {
             slotEls.current.bottom = el;

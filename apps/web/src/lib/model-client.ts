@@ -3,8 +3,7 @@ import { usedAssets, type Project, type TimeUs } from "@cassie/editor-core";
 
 /**
  * 模型客户端 —— 全站唯一的模型访问入口。
- * 所有请求走本地代理（/api/llm、/api/vision），用户填写的 key 只在本机流动，
- * 从不出现在前端代码、仓库或任何远端日志。
+ * 所有请求走本地代理（/api/llm、/api/vision），用户填写的 key 由本机代理转发到用户配置的模型服务，不写入工程或仓库。
  */
 
 export interface LlmConfig {

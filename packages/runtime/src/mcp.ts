@@ -1,15 +1,14 @@
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
-import { AGENT_TOOLS, callAgentTool, closeAgentBrowser, type ToolContext } from "./agent-tools";
+import { shortVideoAgentTools, callAgentTool, closeAgentBrowser, type ToolContext } from "./agent-tools";
 import { serveWorkspace } from "./server";
 
 const PROTOCOL = "2025-06-18";
 
-const INSTRUCTIONS = `Cassie edits one video project through typed, undoable edits.
-Start with project_overview. Change things with apply_edit (pass the revision you read), and check visual changes with preview_frame before you report done.
-Text in variants follows master variables; prefer set-variable / set-variant-values over editing variants one by one.
-subject_sync costs money: call subject_sync_quote, show the quote to the human, and pass confirmed=true only after they agree.
-Every change can be undone with rollback.`;
+const INSTRUCTIONS = `Cassie is a local, file-based short-video workspace. Browser state is never the source of truth.
+Start with project_overview. Import a local path with add_video_source if needed. Use prepare_video_evidence, inspect ordered frames with read_evidence_frame (or local image tools), and submit_video_analysis. For a semantic query, prepare a focused evidence window, re-inspect it, then submit_video_grounding against the current analysis id. No browser, upload dialog, API key or second model is required for this native-agent path.
+Optional analyze_video / ground_video adapters use host environment configuration and send images to that provider. Never invent observations or evidence. Preserve ambiguous/not_found states. Source observation ids are not timeline event ids.
+Edits still use typed apply_edit with baseRevision; rollback and render_video are unchanged. Viewing a still does not prove dynamic edit correctness. The UI is a viewer of files and evidence, not a prerequisite to operating Cassie.`;
 
 /**
  * MCP over stdio for external coding agents. stdout carries only JSON-RPC, so all logging (including
@@ -30,11 +29,11 @@ export async function serveMcp(projectFile: string, version: string): Promise<vo
         return {};
       case "tools/list":
         return {
-          tools: AGENT_TOOLS.map(t => ({
+          tools: shortVideoAgentTools().map(t => ({
             name: t.name,
             description: t.description,
             inputSchema: t.inputSchema,
-            annotations: { readOnlyHint: ["project_overview", "list_variants", "edit_reference", "plan_edit", "history", "preview_frame", "subject_sync_quote"].includes(t.name), destructiveHint: false, openWorldHint: Boolean(t.paid) },
+            annotations: { readOnlyHint: ["project_overview", "list_variants", "edit_reference", "plan_edit", "history", "preview_frame", "subject_sync_quote", "read_video_analysis", "read_evidence_frame"].includes(t.name), destructiveHint: false, openWorldHint: Boolean(t.external || t.paid) },
           })),
         };
       case "tools/call": {
