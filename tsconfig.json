@@ -4,7 +4,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
@@ -14,10 +18,24 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@cassie/editor-core": ["packages/editor-core/src/index.ts"],
-      "@cassie/spec": ["packages/spec/src/index.ts"],
-      "@cassie/harness": ["packages/harness/src/index.ts"]
+      "@cassie/editor-core": [
+        "packages/editor-core/src/index.ts"
+      ],
+      "@cassie/spec": [
+        "packages/spec/src/index.ts"
+      ],
+      "@cassie/harness": [
+        "packages/harness/src/index.ts"
+      ],
+      "@cassie/runtime": [
+        "packages/runtime/src/index.ts"
+      ]
     }
   },
-  "include": ["packages/*/src", "apps/web/src", "tests"]
+  "include": [
+    "packages/*/src",
+    "apps/web/src",
+    "tests",
+    "apps/client/src"
+  ]
 }

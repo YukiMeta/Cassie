@@ -1,5 +1,7 @@
 import { exportVideo } from "../export";
+import { renderOnServer } from "../lib/model-client";
 import {
+  exportRuntime,
   redo,
   setExporting,
   setSettingsOpen,
@@ -13,16 +15,34 @@ export function Topbar() {
   const project = state.adapter.getProject();
   const durationSec = (project.settings.durationUs / 1e6).toFixed(0);
   const history = state.adapter.getHistory();
+  const runtimeUndo = Boolean(state.runtime?.workspace.transactions.some((t) => t.status === "committed"));
 
   const handleExport = async () => {
-    if (state.exporting) return;
+    if (state.exporting || state.busy) return;
     setExporting(true);
-    setToast("开始导出：素材与渲染都在本地完成");
     try {
-      const blob = await exportVideo(state.adapter, (message) => {
-        if (message === "渲染中…") return;
-        setToast(message);
-      });
+      if (state.runtime) {
+        setToast("开始导出：运行时渲染 MP4");
+        const url = await exportRuntime();
+        if (!url) return;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${project.name.replace(/\s+/g, "-")}.mp4`;
+        a.click();
+        setToast("导出完成，MP4 已下载");
+        return;
+      }
+      const render = state.modelConfig.render;
+      const useServer = render.enabled && Boolean(render.baseUrl);
+      setToast(useServer ? "开始导出：提交到渲染服务" : "开始导出：素材与渲染都在本地完成");
+      const blob = useServer
+        ? await renderOnServer(render, project, (message, progress) =>
+            setToast(progress > 0 ? `${message} ${progress}%` : message),
+          )
+        : await exportVideo(state.adapter, (message) => {
+            if (message === "渲染中…") return;
+            setToast(message);
+          });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `${project.name.replace(/\s+/g, "-")}.mp4`;
@@ -61,7 +81,7 @@ export function Topbar() {
         <button
           className="ghost-btn"
           onClick={() => undo()}
-          disabled={!history.past}
+          disabled={state.runtime ? !runtimeUndo || Boolean(state.busy) : !history.past}
           title="撤销 (⌘Z)"
         >
           ↶
@@ -69,8 +89,8 @@ export function Topbar() {
         <button
           className="ghost-btn"
           onClick={() => redo()}
-          disabled={!history.future}
-          title="重做"
+          disabled={state.runtime ? true : !history.future}
+          title={state.runtime ? "运行时工程暂不支持重做" : "重做"}
         >
           ↷
         </button>

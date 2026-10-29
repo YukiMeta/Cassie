@@ -1,0 +1,415 @@
+{
+  "schema": "cassie/events@1",
+  "document": {
+    "editor": {
+      "id": "action-study",
+      "name": "Action Study",
+      "revision": 0,
+      "settings": {
+        "fps": 30,
+        "width": 960,
+        "height": 540,
+        "durationUs": 6700000
+      },
+      "assets": {},
+      "tracks": [
+        {
+          "id": "text",
+          "kind": "text",
+          "name": "Captions",
+          "locked": false,
+          "clips": [
+            {
+              "id": "clip_title",
+              "assetId": null,
+              "startUs": 2500000,
+              "endUs": 4500000,
+              "sourceInUs": 0,
+              "attrs": {
+                "text": "MAKE YOUR NEXT MOVE"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "semantic": {
+      "id": "semantic-action-study",
+      "editorProjectId": "action-study",
+      "entities": {
+        "presenter": {
+          "id": "presenter",
+          "name": "Alex",
+          "kind": "subject",
+          "lifecycle": {
+            "enterUs": 0,
+            "exitUs": 8000000
+          },
+          "attributes": {},
+          "binds": [],
+          "locked": false
+        },
+        "product": {
+          "id": "product",
+          "name": "Product",
+          "kind": "subject",
+          "lifecycle": {
+            "enterUs": 0,
+            "exitUs": 8000000
+          },
+          "attributes": {},
+          "binds": [],
+          "locked": false
+        },
+        "title": {
+          "id": "title",
+          "name": "Title",
+          "kind": "text",
+          "lifecycle": {
+            "enterUs": 0,
+            "exitUs": 8000000
+          },
+          "attributes": {},
+          "binds": [
+            {
+              "targetType": "clip",
+              "targetId": "clip_title",
+              "role": "primary"
+            }
+          ],
+          "locked": false
+        },
+        "camera": {
+          "id": "camera",
+          "name": "Camera",
+          "kind": "scene",
+          "lifecycle": {
+            "enterUs": 0,
+            "exitUs": 8000000
+          },
+          "attributes": {},
+          "binds": [],
+          "locked": false
+        },
+        "callout": {
+          "id": "callout",
+          "name": "Callout",
+          "kind": "text",
+          "lifecycle": {
+            "enterUs": 0,
+            "exitUs": 8000000
+          },
+          "attributes": {},
+          "binds": [],
+          "locked": false
+        },
+        "outro": {
+          "id": "outro",
+          "name": "Outro",
+          "kind": "text",
+          "lifecycle": {
+            "enterUs": 0,
+            "exitUs": 8000000
+          },
+          "attributes": {},
+          "binds": [],
+          "locked": false
+        }
+      },
+      "relations": [],
+      "constraints": []
+    },
+    "frameRate": {
+      "num": 30,
+      "den": 1
+    },
+    "actions": {
+      "gesture": {
+        "execution": "keyframes",
+        "states": {
+          "wave": {
+            "label": "Wave to the viewer",
+            "durationFrames": 60,
+            "motion": {
+              "armAngle": [
+                {
+                  "at": 0.0,
+                  "value": -25
+                },
+                {
+                  "at": 0.2,
+                  "value": -110
+                },
+                {
+                  "at": 0.4,
+                  "value": -80
+                },
+                {
+                  "at": 0.6,
+                  "value": -115
+                },
+                {
+                  "at": 0.8,
+                  "value": -80
+                },
+                {
+                  "at": 1.0,
+                  "value": -25
+                }
+              ],
+              "forearmAngle": [
+                {
+                  "at": 0.0,
+                  "value": 0
+                },
+                {
+                  "at": 0.2,
+                  "value": -30
+                },
+                {
+                  "at": 0.4,
+                  "value": 20
+                },
+                {
+                  "at": 0.6,
+                  "value": -30
+                },
+                {
+                  "at": 0.8,
+                  "value": 20
+                },
+                {
+                  "at": 1.0,
+                  "value": 0
+                }
+              ]
+            }
+          },
+          "point": {
+            "label": "Point toward the product",
+            "durationFrames": 90,
+            "motion": {
+              "armAngle": [
+                {
+                  "at": 0.0,
+                  "value": -25
+                },
+                {
+                  "at": 0.25,
+                  "value": -85
+                },
+                {
+                  "at": 0.5,
+                  "value": -85
+                },
+                {
+                  "at": 0.75,
+                  "value": -85
+                },
+                {
+                  "at": 1.0,
+                  "value": -25
+                }
+              ],
+              "forearmAngle": [
+                {
+                  "at": 0.0,
+                  "value": 0
+                },
+                {
+                  "at": 0.25,
+                  "value": 5
+                },
+                {
+                  "at": 0.5,
+                  "value": 5
+                },
+                {
+                  "at": 0.75,
+                  "value": 5
+                },
+                {
+                  "at": 1.0,
+                  "value": 0
+                }
+              ]
+            }
+          },
+          "rest": {
+            "label": "Pause with arms relaxed",
+            "durationFrames": 30,
+            "motion": {
+              "armAngle": [
+                {
+                  "at": 0.0,
+                  "value": -25
+                },
+                {
+                  "at": 1.0,
+                  "value": -25
+                }
+              ],
+              "forearmAngle": [
+                {
+                  "at": 0.0,
+                  "value": 0
+                },
+                {
+                  "at": 1.0,
+                  "value": 0
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "events": [
+      {
+        "id": "greeting",
+        "entityId": "presenter",
+        "kind": "action",
+        "label": "Presenter gesture",
+        "start": {
+          "frame": 15
+        },
+        "durationFrames": 60,
+        "action": {
+          "definitionId": "gesture",
+          "state": "wave"
+        }
+      },
+      {
+        "id": "product-reveal",
+        "entityId": "product",
+        "kind": "reveal",
+        "label": "Product reveal",
+        "start": {
+          "eventId": "greeting",
+          "edge": "end",
+          "offsetFrames": 6
+        },
+        "durationFrames": 75
+      },
+      {
+        "id": "title",
+        "entityId": "title",
+        "kind": "caption",
+        "label": "Product title",
+        "text": "MAKE YOUR NEXT MOVE",
+        "start": {
+          "eventId": "product-reveal",
+          "edge": "start",
+          "offsetFrames": -6
+        },
+        "durationFrames": 60,
+        "clipId": "clip_title"
+      },
+      {
+        "id": "camera-push",
+        "entityId": "camera",
+        "kind": "camera",
+        "label": "Camera push",
+        "start": {
+          "eventId": "product-reveal",
+          "edge": "start",
+          "offsetFrames": 0
+        },
+        "durationFrames": 45
+      },
+      {
+        "id": "point-label",
+        "entityId": "callout",
+        "kind": "caption",
+        "label": "Pointing callout",
+        "text": "RIGHT HERE",
+        "start": {
+          "eventId": "greeting",
+          "edge": "end",
+          "offsetFrames": -12
+        },
+        "durationFrames": 30,
+        "when": {
+          "eventId": "greeting",
+          "state": "point"
+        }
+      },
+      {
+        "id": "outro",
+        "entityId": "outro",
+        "kind": "caption",
+        "label": "Closing caption",
+        "text": "CASSIE / ACTION STUDY",
+        "start": {
+          "eventId": "product-reveal",
+          "edge": "end",
+          "offsetFrames": 0
+        },
+        "durationFrames": 45
+      }
+    ],
+    "scene": {
+      "background": "#111827",
+      "layers": [
+        {
+          "id": "actor",
+          "entityId": "presenter",
+          "kind": "person",
+          "eventId": "greeting",
+          "x": 170,
+          "y": 120,
+          "width": 240,
+          "height": 330,
+          "color": "#b6f3d5"
+        },
+        {
+          "id": "product-card",
+          "entityId": "product",
+          "kind": "card",
+          "eventId": "product-reveal",
+          "x": 570,
+          "y": 140,
+          "width": 220,
+          "height": 250,
+          "color": "#c6b6ff",
+          "text": "CASSIE"
+        },
+        {
+          "id": "main-title",
+          "entityId": "title",
+          "kind": "text",
+          "eventId": "title",
+          "x": 70,
+          "y": 48,
+          "width": 820,
+          "height": 50,
+          "color": "#f1f5f9"
+        },
+        {
+          "id": "callout",
+          "entityId": "callout",
+          "kind": "text",
+          "eventId": "point-label",
+          "x": 455,
+          "y": 90,
+          "width": 340,
+          "height": 40,
+          "color": "#b6f3d5"
+        },
+        {
+          "id": "closing",
+          "entityId": "outro",
+          "kind": "text",
+          "eventId": "outro",
+          "x": 70,
+          "y": 455,
+          "width": 820,
+          "height": 35,
+          "color": "#c6b6ff"
+        }
+      ]
+    },
+    "media": {}
+  },
+  "transactions": []
+}

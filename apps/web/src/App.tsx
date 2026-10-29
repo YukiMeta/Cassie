@@ -16,6 +16,7 @@ import { Stage } from "./components/Stage";
 import { AgentPanel } from "./components/AgentPanel";
 import { Timeline } from "./components/Timeline";
 import { SettingsModal } from "./components/SettingsModal";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { LayoutContext } from "./components/PanelGrip";
 
 const SLOT_ORDER: SlotId[] = ["left", "center", "right", "bottom"];
@@ -153,6 +154,7 @@ export function App() {
       >
         <div
           className={`slot ${dragTarget === "left" ? "drop-target" : ""} ${dragRef.current?.from === "left" ? "drag-source" : ""}`}
+          style={{ gridArea: "left" }}
           ref={(el) => {
             slotEls.current.left = el;
           }}
@@ -162,6 +164,7 @@ export function App() {
         <div className="panel-divider left" onPointerDown={startResize("leftW")} title="拖动调整宽度" />
         <div
           className={`slot ${dragTarget === "center" ? "drop-target" : ""} ${dragRef.current?.from === "center" ? "drag-source" : ""}`}
+          style={{ gridArea: "center" }}
           ref={(el) => {
             slotEls.current.center = el;
           }}
@@ -171,6 +174,7 @@ export function App() {
         <div className="panel-divider right" onPointerDown={startResize("rightW")} title="拖动调整宽度" />
         <div
           className={`slot ${dragTarget === "right" ? "drop-target" : ""} ${dragRef.current?.from === "right" ? "drag-source" : ""}`}
+          style={{ gridArea: "right" }}
           ref={(el) => {
             slotEls.current.right = el;
           }}
@@ -180,6 +184,7 @@ export function App() {
         <div className="panel-divider bottom" onPointerDown={startResize("bottomH")} title="拖动调整高度" />
         <div
           className={`slot ${dragTarget === "bottom" ? "drop-target" : ""} ${dragRef.current?.from === "bottom" ? "drag-source" : ""}`}
+          style={{ gridArea: "bottom" }}
           ref={(el) => {
             slotEls.current.bottom = el;
           }}
@@ -189,6 +194,7 @@ export function App() {
       </main>
       {state.toast && <div className="toast visible">{state.toast}</div>}
       {state.settingsOpen && <SettingsModal />}
+      <ConfirmDialog />
     </LayoutContext.Provider>
   );
 }

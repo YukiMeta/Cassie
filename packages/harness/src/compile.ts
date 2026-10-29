@@ -31,6 +31,7 @@ export interface EditTransaction {
   baseRevision: number;
   /** 提交后项目版本 */
   committedRevision: number | null;
+  inverse?: EditorCommand;
   validation: ValidationReport | null;
   error: string | null;
   stateLog: { state: HarnessState; atUs: number }[];

@@ -1,16 +1,44 @@
-import { useState } from "react";
-import { llmChat, type LlmConfig, type VisionConfig } from "../lib/model-client";
-import { saveModelConfig, setSettingsOpen, setToast, useAppState, type ModelConfigState } from "../store";
+import { useEffect, useState } from "react";
+import { runtimeDoctor, type DoctorCheck } from "../lib/runtime";
+import { llmChat, renderHealth, type LlmConfig, type RenderConfig, type VisionConfig } from "../lib/model-client";
+import { saveModelConfig, setConfirmMode, setSettingsOpen, setToast, useAppState, type ConfirmMode, type ModelConfigState } from "../store";
+import { CONFIRM_MODES } from "./ConfirmDialog";
 
 /**
  * 模型设置 —— 全站模型能力全部 BYOK：
  * 语义 LLM（OpenAI 兼容 / Anthropic 格式任意端点）+ SAM 3 视觉提取服务。
  * key 只保存在本机 localStorage，请求经本机代理转发，不进仓库、不出本机。
  */
+/** What works on this machine, from the runtime, plus the browser-side language model setting. */
+function DoctorPanel({ llmReady }: { llmReady: boolean }) {
+  const [checks, setChecks] = useState<DoctorCheck[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { runtimeDoctor().then(r => setChecks(r.checks), e => setError(e instanceof Error ? e.message : String(e))); }, []);
+  const rows: DoctorCheck[] = [
+    { id: "llm", label: "语言模型（Agent）", ok: llmReady, needed: false, detail: llmReady ? "已配置" : "未配置", fix: "在下方「语义模型」填地址和 key", unlocks: "Agent 对话、语义指令" },
+    ...(checks ?? []),
+  ];
+  return (
+    <section className="settings-section">
+      <div className="settings-section-head"><div><strong>环境自检</strong><p>这台机器现在能做什么；缺的部分照右侧命令补上，重启 Cassie 生效。</p></div></div>
+      {error ? <p className="doctor-error">运行时未连接：{error}</p> : !checks ? <p className="doctor-wait">检查中…</p> : null}
+      <ul className="doctor">
+        {rows.map(c => (
+          <li key={c.id} className={c.ok ? "ok" : c.needed ? "bad" : "off"}>
+            <span className="doctor-mark">{c.ok ? "✓" : c.needed ? "✗" : "○"}</span>
+            <div><strong>{c.label}</strong><small>{c.ok ? c.detail : `${c.detail} · 缺少时：${c.unlocks}`}</small></div>
+            {!c.ok && c.fix ? <code>{c.fix}</code> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function SettingsModal() {
   const state = useAppState();
   const [draft, setDraft] = useState<ModelConfigState>(state.modelConfig);
-  const [testing, setTesting] = useState<"llm" | "vision" | null>(null);
+  const [testing, setTesting] = useState<"llm" | "vision" | "render" | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const save = () => {
@@ -49,8 +77,23 @@ export function SettingsModal() {
     }
   };
 
+  const testRender = async () => {
+    setTesting("render");
+    setTestResult(null);
+    try {
+      await renderHealth(draft.render);
+      setTestResult({ ok: true, message: "渲染服务在线" });
+    } catch (err) {
+      setTestResult({ ok: false, message: `无法连接 ${draft.render.baseUrl}：${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setTesting(null);
+    }
+  };
+
   const llm = draft.llm;
   const vision = draft.vision;
+  const render = draft.render;
+  const setRender = (patch: Partial<RenderConfig>) => setDraft((d) => ({ ...d, render: { ...d.render, ...patch } }));
   const setLlm = (patch: Partial<LlmConfig>) => setDraft((d) => ({ ...d, llm: { ...d.llm, ...patch } }));
   const setVision = (patch: Partial<VisionConfig>) => setDraft((d) => ({ ...d, vision: { ...d.vision, ...patch } }));
 
@@ -66,6 +109,20 @@ export function SettingsModal() {
             ✕
           </button>
         </div>
+
+        <DoctorPanel llmReady={Boolean(state.modelConfig.llm.enabled && state.modelConfig.llm.apiKey)} />
+
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <div>
+              <strong>模型任务确认</strong>
+              <p>改文字、审核这类本地操作从不询问；生成、主体同步这类模型任务按这里决定是否先确认。</p>
+            </div>
+            <select className="confirm-mode" value={state.confirmMode} onChange={(e) => setConfirmMode(e.target.value as ConfirmMode)}>
+              {CONFIRM_MODES.map(([id, text]) => <option key={id} value={id}>{text}</option>)}
+            </select>
+          </div>
+        </section>
 
         <section className="settings-section">
           <div className="settings-section-head">
@@ -156,6 +213,53 @@ export function SettingsModal() {
               <div className="settings-test">
                 <button className="secondary-btn" disabled={testing !== null} onClick={() => void testVision()}>
                   {testing === "vision" ? "测试中…" : "测试连接"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <div>
+              <strong>渲染服务</strong>
+              <p>
+                逐帧确定性渲染成片，支持更高画质与更完整的字体排版。运行本地服务（servers/render），
+                或填入部署好的渲染端点；关闭时在浏览器本地导出。
+              </p>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={render.enabled}
+                onChange={(e) => setRender({ enabled: e.target.checked })}
+              />
+              <span />
+            </label>
+          </div>
+          {render.enabled && (
+            <div className="settings-fields">
+              <label>
+                <span>服务地址</span>
+                <input
+                  value={render.baseUrl}
+                  placeholder="http://localhost:8797"
+                  onChange={(e) => setRender({ baseUrl: e.target.value })}
+                />
+              </label>
+              <label>
+                <span>访问令牌（可选）</span>
+                <input
+                  type="password"
+                  value={render.apiKey}
+                  placeholder="本地服务无需"
+                  autoComplete="off"
+                  onChange={(e) => setRender({ apiKey: e.target.value })}
+                />
+              </label>
+              <div className="settings-test">
+                <button className="secondary-btn" disabled={testing !== null} onClick={() => void testRender()}>
+                  {testing === "render" ? "测试中…" : "测试连接"}
                 </button>
               </div>
             </div>
