@@ -12,6 +12,7 @@ import {
   type PanelId,
   type SlotId,
 } from "./store";
+import { Viewer } from "./components/Viewer";
 import { Topbar } from "./components/Topbar";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
@@ -43,8 +44,8 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === " " && !e.metaKey && !e.ctrlKey) {
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (providerWorkbench && e.key === " " && !e.metaKey && !e.ctrlKey && tag !== "BUTTON") {
         e.preventDefault();
         togglePlay();
         return;
@@ -118,6 +119,13 @@ export function App() {
     void bootDemo();
   }
 
+  if (!providerWorkbench) return <div className="minimal-shell">
+    <Topbar />
+    <Viewer />
+    {state.toast && <div className="toast visible" role="status">{state.toast}</div>}
+    <ConfirmDialog />
+  </div>;
+
   if (!state.booted) {
     return (
       <div className="boot-screen">
@@ -150,7 +158,7 @@ export function App() {
     <LayoutContext.Provider value={{ startPanelDrag }}>
       <Topbar />
       <main
-        className={`app ${providerWorkbench ? "provider-workbench" : "agent-viewer"}`}
+        className="app provider-workbench"
         style={{
           gridTemplateColumns: `${sizes.leftW}px 12px minmax(0, 1fr) 12px ${sizes.rightW}px`,
           gridTemplateRows: `minmax(0, 1fr) 10px ${sizes.bottomH}px`,
