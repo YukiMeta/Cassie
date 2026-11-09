@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs, staleSubjects, variantDocument } from "@cassie/harness";
 import type { RegionKey, DocumentEdit, ActionEdit, ActionPlan, EventWorkspace, GenerationReceipt } from "@cassie/spec";
-import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, locateInVariant, type TrackRequest, type VariantImportOptions, serveMcp, doctor, addVideoSource, prepareVideoEvidence, readEvidenceFrame, submitVideoAnalysis, submitVideoGrounding, loadUnderstandingConfig, analyzeVideo, groundVideo } from "@cassie/runtime";
+import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, locateInVariant, type TrackRequest, type VariantImportOptions, serveMcp, doctor, addVideoSource, prepareVideoEvidence, readEvidenceFrame, submitVideoAnalysis, submitVideoGrounding, loadUnderstandingConfig, analyzeVideo, groundVideo, previewGroundedRecolor, applyGroundedRecolor } from "@cassie/runtime";
 
 const legacyHelp = `Cassie — semantic action/event workspace
 
@@ -54,6 +54,8 @@ const help = `Cassie — local short-video workspace for agents (<=15s)
   cassie record-grounding <project.json> --bundle <id> --analysis <id> --query <text> --data <binding.json>
   cassie analyze <project.json> --asset <id> [--config <host-model.json>]
   cassie ground <project.json> --asset <id> --analysis <id> --query <text> [--config <host-model.json>]
+  cassie preview-recolor <project.json> --edit <recolor.json>
+  cassie apply-recolor <project.json> --preview <preview-id>
   cassie edit <project.json> --edit <edit.json>
   cassie rollback <project.json> --transaction <id>
   cassie render <project.json> --out <video.mp4>
@@ -67,7 +69,7 @@ Use cassie help-legacy for existing advanced/variant commands; old projects rema
 `;
 
 async function main() {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output", "variant", "prompt", "name", "scope", "source", "asset", "bundle", "data", "model", "analysis", "query", "config", "frame", "start-frame", "end-frame"].map(k => [k, { type: "string" as const }])) });
+  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output", "variant", "prompt", "name", "scope", "source", "asset", "bundle", "data", "model", "analysis", "query", "config", "frame", "start-frame", "end-frame", "preview"].map(k => [k, { type: "string" as const }])) });
   const [command, input] = positionals;
   if (!command || command === "help") { process.stdout.write(help); return; }
   if (command === "help-legacy") { process.stdout.write(legacyHelp); return; }
@@ -96,6 +98,8 @@ async function main() {
   if (command === "record-grounding") { output(await submitVideoGrounding(file,option("bundle"),option("analysis"),option("query"),await read(option("data"))));return; }
   if (command === "analyze") { output(await analyzeVideo(file,option("asset"),await loadUnderstandingConfig(values.config),m=>process.stderr.write(m+"\n")));return; }
   if (command === "ground") { output(await groundVideo(file,option("asset"),option("analysis"),option("query"),await loadUnderstandingConfig(values.config),m=>process.stderr.write(m+"\n")));return; }
+  if (command === "preview-recolor") { output(await previewGroundedRecolor(file, await read(option("edit")))); return; }
+  if (command === "apply-recolor") { output(await applyGroundedRecolor(file, option("preview"))); return; }
   if (command === "init") {
     await absent(file);
     const template = values.template ? await readFile(resolve(values.template), "utf8") : await readFile(new URL("../../../examples/action-flow/project.cassie.json", import.meta.url), "utf8");
@@ -208,7 +212,7 @@ async function main() {
     } catch (error) { run.status = "failed"; const last = run.jobs.at(-1); if (last) Object.assign(last, { status: "failed", error: (error as Error).message }); await writeJson(out, run); throw error; }
     return;
   }
-  if (command === "edit") { const edit = await read<DocumentEdit>(option("edit")); const ws = await updateWorkspace(file, async ws => {if(edit.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),edit);return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit));}); output({ revision: ws.document.editor.revision, transactionId: ws.transactions.at(-1)!.id, events: resolveEvents(ws.document) }); return; }
+  if (command === "edit") { const edit = await read<DocumentEdit>(option("edit")); if (edit.kind === "apply-grounded-recolor") throw new EventError("PREVIEW_REQUIRED", "Use apply-recolor with a preview id"); const ws = await updateWorkspace(file, async ws => {if(edit.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),edit);return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit));}); output({ revision: ws.document.editor.revision, transactionId: ws.transactions.at(-1)!.id, events: resolveEvents(ws.document) }); return; }
   if (command === "inspect") { const ws = await readWorkspace(file); output({ schema: ws.schema, project: ws.document.editor, entities: ws.document.semantic.entities, events: resolveEvents(ws.document), transactions: ws.transactions.map(t => ({ id: t.id, status: t.status, journal: t.journal })) }); return; }
   if (command === "plan") { const ws = await readWorkspace(file); const plan = planAction(ws.document, await read<ActionEdit>(option("edit"))); await writeJson(option("out"), plan); output({ id: plan.id, status: plan.status, changes: plan.changes, tasks: plan.tasks }); return; }
   if (command === "accept") {

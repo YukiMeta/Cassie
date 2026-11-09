@@ -24,7 +24,7 @@ export function Viewer() {
       </div>
     </section>}
     {state.runtime && <details className="viewer-history"><summary>修改记录{history.length ? ` · ${history.length}` : ''}</summary>
-      {history.length ? <ul>{history.map(t => <li key={t.id}><span>{t.edit.kind}</span><small>{t.status === 'committed' ? '已应用' : '已撤销'}</small></li>)}</ul> : <p>暂无修改</p>}
+      {history.length ? <ul>{history.map(t => <li key={t.id}><span>{t.edit.kind === "apply-grounded-recolor" ? "瓶身改色" : t.edit.kind}</span><small>{t.status === 'committed' ? '已应用' : '已撤销'}</small></li>)}</ul> : <p>暂无修改</p>}
     </details>}
   </main>;
 }

@@ -43,7 +43,8 @@ export function compileScene(source: EventDocument, assetUrls: Record<string, st
     if (layer.kind === "card") content = `<div style="width:100%;height:100%;border:1px solid ${fill};border-radius:24px;background:linear-gradient(145deg,${fill}33,#172033);display:flex;align-items:center;justify-content:center;flex-direction:column;box-shadow:0 25px 60px #0005"><div style="width:60px;height:105px;border-radius:14px;background:${fill};box-shadow:inset -14px -8px 0 #0002;transform:rotate(-8deg)"></div><span style="margin-top:22px;letter-spacing:6px;color:${fill};font-size:18px">${escape(layer.text ?? "")}</span></div>`;
     if (layer.kind === "text") content = `<div style="font-size:${Math.max(12, layer.height * .65)}px;font-weight:650;letter-spacing:2px;line-height:1.2;color:${fill};text-align:center;text-shadow:0 1px 2px #000a,0 2px 14px #0008">${escape(event?.text ?? layer.text ?? "")}</div>`;
     if (layer.kind === "video") {
-      const src = layer.assetId ? assetUrls[layer.assetId] : undefined;
+      const visualAssetId = layer.groundedRecolor?.assetId ?? layer.assetId;
+      const src = visualAssetId ? assetUrls[visualAssetId] : undefined;
       if (!src) throw new EventError("MISSING_MEDIA", `No staged media URL for ${layer.id}`);
       const asset = d.editor.assets[layer.assetId!], c = layer.crop;
       const sw = asset?.width ?? layer.width, sh = asset?.height ?? layer.height;

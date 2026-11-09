@@ -8,7 +8,7 @@ const PROTOCOL = "2025-06-18";
 const INSTRUCTIONS = `Cassie is a local, file-based short-video workspace. Browser state is never the source of truth.
 Start with project_overview. Import a local path with add_video_source if needed. Use prepare_video_evidence, inspect ordered frames with read_evidence_frame (or local image tools), and submit_video_analysis. For a semantic query, prepare a focused evidence window, re-inspect it, then submit_video_grounding against the current analysis id. No browser, upload dialog, API key or second model is required for this native-agent path.
 Optional analyze_video / ground_video adapters use host environment configuration and send images to that provider. Never invent observations or evidence. Preserve ambiguous/not_found states. Source observation ids are not timeline event ids.
-Edits still use typed apply_edit with baseRevision; rollback and render_video are unchanged. Viewing a still does not prove dynamic edit correctness. The UI is a viewer of files and evidence, not a prerequisite to operating Cassie.`;
+For a grounded recolor, supply a reviewed body-only matte to preview_grounded_recolor. Inspect the preview, then apply_grounded_recolor using its preview id; rollback takes the transaction id. Other edits use typed apply_edit with baseRevision. Viewing a still does not prove dynamic edit correctness. The UI is a viewer of files and evidence, not a prerequisite to operating Cassie.`;
 
 /**
  * MCP over stdio for external coding agents. stdout carries only JSON-RPC, so all logging (including

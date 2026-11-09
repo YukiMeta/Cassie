@@ -8,6 +8,7 @@ import { addVideoSource, prepareVideoEvidence, readEvidenceFrame, submitVideoAna
 import { analyzeVideo, groundVideo } from "./analyze";
 import { loadAnalysis, loadGrounding } from "./analyze";
 import { readWorkspace, updateWorkspace } from "./store";
+import { previewGroundedRecolor, applyGroundedRecolor } from "./grounded-recolor";
 import { renderVideo } from "./render";
 import { trackConcept } from "./concept";
 import { planSubjectSync, runSubjectSync, type SubjectProvider } from "./subject-sync";
@@ -192,6 +193,18 @@ export const AGENT_TOOLS: AgentTool[] = [
     run: async (ctx,args) => json({ analysis: await loadAnalysis(ctx.file,String(args.assetId)), grounding: await loadGrounding(ctx.file,String(args.assetId)) }),
   },
   {
+    name: "preview_grounded_recolor",
+    description: "Render a local recolor preview from the current resolved grounding, a source-aligned grayscale matte for its exact frame range, and a hex color. Does not change the project. Inspect the resulting MP4 before applying.",
+    inputSchema: obj({script: {type: "object", description: "cassie/grounded-recolor@1: sourceAssetId, layerId, groundingId, targetEntityId, mask {path,sha256}, color"}}, ["script"]),
+    run: async (ctx, args) => json(await previewGroundedRecolor(ctx.file, args.script)),
+  },
+  {
+    name: "apply_grounded_recolor",
+    description: "Commit a reviewed local recolor preview as one undoable edit. Rejects stale project revisions, changed media and unresolved grounding.",
+    inputSchema: obj({previewId: str("From preview_grounded_recolor")}, ["previewId"]),
+    run: async (ctx, args) => json(await applyGroundedRecolor(ctx.file, String(args.previewId))),
+  },
+  {
     name: "project_overview",
     description: "Read the project: revision, canvas, events with frame ranges, layers, subjects, text variables, subject references and a variant summary. Call this first.",
     inputSchema: obj({}),
@@ -229,9 +242,11 @@ export const AGENT_TOOLS: AgentTool[] = [
     description: "Apply one typed edit and save it as an undoable transaction. Pass the revision you last read so a concurrent human edit is never overwritten.",
     inputSchema: obj({ edit: { type: "object", description: "A typed edit, see edit_reference" }, baseRevision: { type: "integer" } }, ["edit", "baseRevision"]),
     run: async (ctx, args) => {
+      const edit = args.edit as DocumentEdit;
+      if (edit?.kind === "apply-grounded-recolor") throw new EventError("PREVIEW_REQUIRED", "Use apply_grounded_recolor with a preview id");
       const ws = await updateWorkspace(ctx.file, ws => {
         if (ws.document.editor.revision !== args.baseRevision) throw new EventError("STALE_PLAN", `Project is at revision ${ws.document.editor.revision}, not ${args.baseRevision}; re-read and retry`);
-        return applyDocumentEdit(ws, planDocumentEdit(ws.document, args.edit as DocumentEdit));
+        return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit));
       });
       const tx = ws.transactions.at(-1)!;
       return json({ ok: true, revision: ws.document.editor.revision, transactionId: tx.id });

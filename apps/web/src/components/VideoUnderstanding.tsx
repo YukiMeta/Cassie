@@ -11,7 +11,8 @@ const errorMessage = (e: unknown) => e instanceof Error ? e.message : String(e);
 export function VideoUnderstanding({ onFilmSeek }: { onFilmSeek?: () => void } = {}) {
   const state = useAppState();
   const document = state.runtime?.document;
-  const assets = Object.values(document?.editor.assets ?? {}).filter(a => a.kind === 'video' && document?.media[a.id]);
+  const composites = new Set(document?.scene.layers.flatMap(layer => layer.groundedRecolor?.assetId ?? []));
+  const assets = Object.values(document?.editor.assets ?? {}).filter(a => a.kind === 'video' && document?.media[a.id] && !composites.has(a.id));
   const [chosenAsset, setChosenAsset] = useState('');
   const assetId = assets.some(a => a.id === chosenAsset) ? chosenAsset : assets.at(-1)?.id ?? '';
   const hash = document?.media[assetId]?.sha256;
@@ -84,7 +85,13 @@ export function VideoUnderstanding({ onFilmSeek }: { onFilmSeek?: () => void } =
     finally { if (generation.current === current) setPending(false); }
   };
   const time = (r: FrameRange) => `${(r.startFrame/fps).toFixed(2)}–${(r.endFrame/fps).toFixed(2)}s`;
-  const timelineMatches = selection && document ? document.editor.tracks.flatMap(t => t.clips).filter(c => c.assetId === assetId && selection.range.startFrame / fps * 1e6 >= c.sourceInUs && selection.range.endFrame / fps * 1e6 <= c.sourceInUs + c.endUs-c.startUs) : [];
+  const timelineMatches = selection && document ? document.editor.tracks.flatMap(t => t.clips).filter(clip => {
+    if (clip.assetId !== assetId) return false;
+    // Editor times are stored in rounded microseconds; compare in the evidence frame domain.
+    const startFrame = Math.round(clip.sourceInUs * fps / 1e6);
+    const endFrame = Math.round((clip.sourceInUs + clip.endUs - clip.startUs) * fps / 1e6);
+    return selection.range.startFrame >= startFrame && selection.range.endFrame <= endFrame;
+  }) : [];
 
   if (!document) return <div className="viewer-empty"><h1>等待本地工程</h1><p>Agent 打开短片后，视频和证据会出现在这里。</p><details><summary>连接方式</summary><code>npm start project.cassie.json</code></details></div>;
   return <div className="understanding">

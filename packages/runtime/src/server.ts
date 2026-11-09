@@ -124,7 +124,7 @@ export async function serveWorkspace(projectFile: string, port = 4317) {
         })().catch(e=>{job.status="failed";job.message=e instanceof Error?e.message:"分析失败";}).finally(()=>analysisBusy.delete(ref.sha256));
         send(res,{id},202); return;
       }
-      if (path === "/api/edit") { send(res, await updateWorkspace(file, async ws => { if(body.edit?.kind==="attach-analysis-source")await verifiedMedia(dirname(file),body.edit.media);if(body.edit?.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),body.edit);if (ws.document.editor.revision !== body.revision) throw new EventError("STALE_PLAN", "Project changed; refresh before editing"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, body.edit)); })); return; }
+      if (path === "/api/edit") { if (body.edit?.kind === "apply-grounded-recolor") throw new EventError("PREVIEW_REQUIRED", "Use the CLI or MCP preview and apply workflow"); send(res, await updateWorkspace(file, async ws => { if(body.edit?.kind==="attach-analysis-source")await verifiedMedia(dirname(file),body.edit.media);if(body.edit?.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),body.edit);if (ws.document.editor.revision !== body.revision) throw new EventError("STALE_PLAN", "Project changed; refresh before editing"); return applyDocumentEdit(ws, planDocumentEdit(ws.document, body.edit)); })); return; }
       if (path === "/api/plan") { send(res, { plan: planAction((await readWorkspace(file)).document, body) }); return; }
       if (path === "/api/apply") { send(res, await updateWorkspace(file, ws => applyAction(ws, body.plan))); return; }
       if (path === "/api/rollback") { send(res, await updateWorkspace(file, ws => rollbackAction(ws, body.id))); return; }

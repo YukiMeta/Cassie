@@ -79,3 +79,27 @@ CASSIE_TEST_EXPORT=1 npm run test:analysis
 ## 当前边界
 
 音频未参与理解；稀疏采样会遗漏快速或短暂动作。`not_found` 表示当前证据不足，不证明原片中不存在该动作。尚未完成真实模型质量基准、人工纠正、自动硬切加密采样、生成式修改和语义编辑脚本执行。下一步应使用冻结样片，测自动观察与人工校正后的定位差异。
+
+### Grounded local recolor
+
+After recording a resolved event, an agent can render a deterministic body-only recolor with an explicit matte. The matte is a local grayscale video with the source dimensions and frame rate, starting at the candidate's first source frame and containing exactly its frame count. White pixels select the target and black pixels preserve the source. The mask must already exclude the protected objects; this step does not segment them automatically.
+
+Save this object as an edit script:
+
+```json
+{
+  "schema": "cassie/grounded-recolor@1",
+  "sourceAssetId": "source asset id",
+  "layerId": "video layer that contains the whole resolved range",
+  "groundingId": "current resolved grounding id",
+  "targetEntityId": "entity id from that grounding candidate",
+  "mask": { "path": "project-relative-matte.mkv", "sha256": "64-character hash" },
+  "color": "#16355f"
+}
+```
+
+1. `cassie preview-recolor project.cassie.json --edit recolor.json` renders a review MP4 and a lossless RGB master. It does not change the workspace.
+2. Check the source evidence, the matte and the result. `cassie apply-recolor project.cassie.json --preview <id>` commits the reviewed composite to the one layer, preserving the original source asset and timeline. A changed project, stale grounding, or altered media invalidates the preview.
+3. `cassie rollback project.cassie.json --transaction <id>` restores the original layer. The GUI can show the original source evidence and the committed scene.
+
+MCP equivalents: `preview_grounded_recolor`, `apply_grounded_recolor` and `rollback`. The preview currently accepts one resolved target in one shot and one recolor per layer. The RGB master can be checked for exact equality outside the matte; the playback MP4 is re-encoded for compatibility.
