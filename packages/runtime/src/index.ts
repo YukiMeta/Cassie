@@ -18,3 +18,9 @@ export * from "./concept";
 export * from "./locate";
 export * from "./variant-locate";
 export * from "./doctor";
+
+export * from "./analyze";
+
+export * from "./understanding-workflow";
+
+export * from "./grounded-recolor";

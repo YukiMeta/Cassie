@@ -87,6 +87,15 @@ export function validateDocument(d: EventDocument): void {
       requireThat(layer.kind === "video" && asset?.width && asset.height && [c.x, c.y, c.width, c.height].every(Number.isFinite) && c.x >= 0 && c.y >= 0 && c.width > 0 && c.height > 0 && c.x + c.width <= asset.width && c.y + c.height <= asset.height, "INVALID_CROP", layer.id);
     }
     if (layer.kind === "video") requireThat(layer.assetId && d.media[layer.assetId] && d.editor.assets[layer.assetId]?.kind === "video", "MISSING_MEDIA", layer.id);
+    if (layer.groundedRecolor) {
+      const g = layer.groundedRecolor, source = d.editor.assets[layer.assetId ?? ""], result = d.editor.assets[g.assetId];
+      requireThat(layer.kind === "video" && source?.kind === "video" && result?.kind === "video" &&
+        layer.assetId !== g.assetId && d.media[layer.assetId!]?.sha256 === g.sourceSha256 && d.media[g.assetId] &&
+        source.width === result.width && source.height === result.height && source.durationUs === result.durationUs &&
+        integer(g.startFrame) && integer(g.endFrame, g.startFrame + 1) && typeof g.groundingId === "string" &&
+        typeof g.targetEntityId === "string" && /^#[a-f0-9]{6}$/i.test(g.color) && /^[a-f0-9]{64}$/.test(g.maskSha256),
+        "INVALID_RECOLOR", layer.id);
+    }
   }
   for (const [eventId, matte] of Object.entries(d.subjectMattes ?? {})) {
     const event=d.events.find(e=>e.id===eventId), asset=d.editor.assets[matte.maskAssetId];

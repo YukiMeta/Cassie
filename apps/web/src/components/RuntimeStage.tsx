@@ -14,7 +14,7 @@ import {
 } from "../store";
 import { sceneUrl } from "../lib/runtime";
 import { PanelGrip } from "./PanelGrip";
-import { StageViewSwitch } from "./VariantBoard";
+
 
 type SceneWindow = Window & { cassieSeek?: (time: number) => Promise<void> };
 interface Rect { id: string; left: number; top: number; width: number; height: number }
@@ -40,6 +40,7 @@ export function RuntimeStage() {
     if (!el) return;
     const observer = new ResizeObserver(() => {
       const box = el.getBoundingClientRect();
+      if (box.width <= 48 || box.height <= 48) return; // Ignore transient hidden/zero-size observations.
       setFit(Math.max(0.05, Math.min((box.width - 48) / width, (box.height - 48) / height)));
     });
     observer.observe(el);
@@ -124,7 +125,6 @@ export function RuntimeStage() {
       <div className="stage-toolbar">
         <div className="tool-group">
           <PanelGrip panel="stage" />
-          <StageViewSwitch />
           <button className="tool-btn active" title="点击画面中的物体选中局部主体" onClick={() => selectRegion(null)}>
             ↖ 选择
           </button>

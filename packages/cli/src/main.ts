@@ -1,11 +1,11 @@
-import { readFile, access, mkdir } from "node:fs/promises";
+import { readFile, writeFile, access, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { applyDocumentEdit, planDocumentEdit, applyAction, planAction, resolveEvents, rollbackAction, EventError, parseWorkspace, frameToUs, staleSubjects, variantDocument } from "@cassie/harness";
 import type { RegionKey, DocumentEdit, ActionEdit, ActionPlan, EventWorkspace, GenerationReceipt } from "@cassie/spec";
-import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, locateInVariant, type TrackRequest, type VariantImportOptions, serveMcp, doctor } from "@cassie/runtime";
+import { readWorkspace, writeJson, updateWorkspace, renderVideo, serveWorkspace, stageScene, importVideo, createReceipt, verifyReceiptFiles, verifiedMedia, runProcess, probeVideo, normalizeVideo, importVideoWorkspace, extractSubjectMatte, verifyMatteEdit, exportSubjectCutout, bundleVideoEdit, trackRegion, importFilmWorkspace, importVideoAsFilm, planReplacement, replaceRegion, planVariantImport, applyEdits, variantRows, importSubjectReference, planSubjectSync, runSubjectSync, attachSyncedTake, locateInVariant, type TrackRequest, type VariantImportOptions, serveMcp, doctor, addVideoSource, prepareVideoEvidence, readEvidenceFrame, submitVideoAnalysis, submitVideoGrounding, loadUnderstandingConfig, analyzeVideo, groundVideo, previewGroundedRecolor, applyGroundedRecolor } from "@cassie/runtime";
 
-const help = `Cassie — semantic action/event workspace
+const legacyHelp = `Cassie — semantic action/event workspace
 
   cassie init <project.json> [--template <project.json>]
   cassie edit <project.json> --edit <edit.json>
@@ -43,10 +43,36 @@ init uses a procedural animation fixture; import prepares an actual video edit.
 JSON results go to stdout; errors have a code and a nonzero exit status.
 `;
 
+const help = `Cassie — local short-video workspace for agents (<=15s)
+
+  cassie inspect <project.json>
+  cassie import-video <local-video.mp4> --out <project.json>
+  cassie add-source <project.json> --source <local-video.mp4>
+  cassie evidence <project.json> --asset <id> [--start-frame N --end-frame N] [--fps 8]
+  cassie evidence-frame <project.json> --bundle <id> --frame N --out <frame.jpg>
+  cassie record-analysis <project.json> --bundle <id> --data <observations.json> [--model <agent-name>]
+  cassie record-grounding <project.json> --bundle <id> --analysis <id> --query <text> --data <binding.json>
+  cassie analyze <project.json> --asset <id> [--config <host-model.json>]
+  cassie ground <project.json> --asset <id> --analysis <id> --query <text> [--config <host-model.json>]
+  cassie preview-recolor <project.json> --edit <recolor.json>
+  cassie apply-recolor <project.json> --preview <preview-id>
+  cassie edit <project.json> --edit <edit.json>
+  cassie rollback <project.json> --transaction <id>
+  cassie render <project.json> --out <video.mp4>
+  cassie mcp <project.json>
+  cassie normalize <video.mp4> --out <cfr.mp4> [--fps 24]
+
+Native-agent loop: local source -> evidence manifest/images -> observations -> focused evidence -> grounding.
+No browser, upload dialog or second model required. analyze/ground are optional provider adapters using host config or CASSIE_VISION_* env.
+All results are JSON on stdout. No GUI state or localStorage is used. Edit transactions remain undoable.
+Use cassie help-legacy for existing advanced/variant commands; old projects remain compatible.
+`;
+
 async function main() {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output", "variant", "prompt", "name", "scope"].map(k => [k, { type: "string" as const }])) });
+  const { positionals, values } = parseArgs({ allowPositionals: true, options: Object.fromEntries(["template", "out", "entity", "instruction", "edit", "provider", "provider-name", "plan", "candidate", "review", "receipt", "transaction", "port", "fps", "cuts", "action-shot", "event", "project", "track", "entity", "reference", "region", "pad", "keys", "dir", "pattern", "labels", "brief", "output", "variant", "prompt", "name", "scope", "source", "asset", "bundle", "data", "model", "analysis", "query", "config", "frame", "start-frame", "end-frame", "preview"].map(k => [k, { type: "string" as const }])) });
   const [command, input] = positionals;
   if (!command || command === "help") { process.stdout.write(help); return; }
+  if (command === "help-legacy") { process.stdout.write(legacyHelp); return; }
   if (command === "doctor") {
     const checks = await doctor();
     for (const c of checks) console.log(`${c.ok ? "✓" : c.needed ? "✗" : "○"} ${c.label} — ${c.detail}${c.ok ? "" : `\n    缺少时：${c.unlocks}${c.fix ? `\n    修复：${c.fix}` : ""}`}`);
@@ -59,6 +85,21 @@ async function main() {
   const read = async <T,>(path: string): Promise<T> => JSON.parse(await readFile(resolve(path), "utf8"));
   const output = (value: unknown) => process.stdout.write(JSON.stringify(value, null, 2) + "\n");
   const absent = async (path: string) => { try { await access(path); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return; throw e; } throw new EventError("FILE_EXISTS", `Refusing to overwrite ${path}`); };
+  if (command === "add-source") { output(await addVideoSource(file,resolve(option("source")))); return; }
+  if (command === "evidence") {
+    if ((values["start-frame"]===undefined)!==(values["end-frame"]===undefined)) throw new EventError("ARGUMENTS","Provide both source frame boundaries");
+    output(await prepareVideoEvidence(file,option("asset"),values["start-frame"]===undefined?undefined:{startFrame:Number(values["start-frame"]),endFrame:Number(values["end-frame"])},Number(values.fps??2)));return;
+  }
+  if (command === "evidence-frame") {
+    const frame=await readEvidenceFrame(file,option("bundle"),Number(option("frame"))),out=resolve(option("out"));
+    await mkdir(dirname(out),{recursive:true});await writeFile(out,Buffer.from(frame.data,"base64"),{flag:"wx",mode:0o600});output({path:out,sourceFrame:frame.sourceFrame,source:frame.source});return;
+  }
+  if (command === "record-analysis") { output(await submitVideoAnalysis(file,option("bundle"),await read(option("data")),values.model));return; }
+  if (command === "record-grounding") { output(await submitVideoGrounding(file,option("bundle"),option("analysis"),option("query"),await read(option("data"))));return; }
+  if (command === "analyze") { output(await analyzeVideo(file,option("asset"),await loadUnderstandingConfig(values.config),m=>process.stderr.write(m+"\n")));return; }
+  if (command === "ground") { output(await groundVideo(file,option("asset"),option("analysis"),option("query"),await loadUnderstandingConfig(values.config),m=>process.stderr.write(m+"\n")));return; }
+  if (command === "preview-recolor") { output(await previewGroundedRecolor(file, await read(option("edit")))); return; }
+  if (command === "apply-recolor") { output(await applyGroundedRecolor(file, option("preview"))); return; }
   if (command === "init") {
     await absent(file);
     const template = values.template ? await readFile(resolve(values.template), "utf8") : await readFile(new URL("../../../examples/action-flow/project.cassie.json", import.meta.url), "utf8");
@@ -171,7 +212,7 @@ async function main() {
     } catch (error) { run.status = "failed"; const last = run.jobs.at(-1); if (last) Object.assign(last, { status: "failed", error: (error as Error).message }); await writeJson(out, run); throw error; }
     return;
   }
-  if (command === "edit") { const edit = await read<DocumentEdit>(option("edit")); const ws = await updateWorkspace(file, async ws => {if(edit.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),edit);return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit));}); output({ revision: ws.document.editor.revision, transactionId: ws.transactions.at(-1)!.id, events: resolveEvents(ws.document) }); return; }
+  if (command === "edit") { const edit = await read<DocumentEdit>(option("edit")); if (edit.kind === "apply-grounded-recolor") throw new EventError("PREVIEW_REQUIRED", "Use apply-recolor with a preview id"); const ws = await updateWorkspace(file, async ws => {if(edit.kind==="attach-subject-matte")await verifyMatteEdit(ws.document,dirname(file),edit);return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit));}); output({ revision: ws.document.editor.revision, transactionId: ws.transactions.at(-1)!.id, events: resolveEvents(ws.document) }); return; }
   if (command === "inspect") { const ws = await readWorkspace(file); output({ schema: ws.schema, project: ws.document.editor, entities: ws.document.semantic.entities, events: resolveEvents(ws.document), transactions: ws.transactions.map(t => ({ id: t.id, status: t.status, journal: t.journal })) }); return; }
   if (command === "plan") { const ws = await readWorkspace(file); const plan = planAction(ws.document, await read<ActionEdit>(option("edit"))); await writeJson(option("out"), plan); output({ id: plan.id, status: plan.status, changes: plan.changes, tasks: plan.tasks }); return; }
   if (command === "accept") {

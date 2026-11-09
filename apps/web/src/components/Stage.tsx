@@ -14,7 +14,7 @@ import {
 } from "../store";
 import { PanelGrip } from "./PanelGrip";
 import { RuntimeStage } from "./RuntimeStage";
-import { VariantBoard } from "./VariantBoard";
+
 
 /**
  * 舞台：真实视频预览（video element 按播放头 seek）+ 文字叠加层 + 外观滤镜。
@@ -23,7 +23,7 @@ import { VariantBoard } from "./VariantBoard";
 export function Stage() {
   const state = useAppState();
   if (!state.runtime) return <LocalStage />;
-  return state.stageView === "variants" && state.runtime.document.variants ? <VariantBoard /> : <RuntimeStage />;
+  return <RuntimeStage />;
 }
 
 function LocalStage() {

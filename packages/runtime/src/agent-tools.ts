@@ -4,7 +4,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { applyDocumentEdit, checkNoOverlap, diff, frameRuns, resolveSelector, EventError, planDocumentEdit, resolveEvents, resolveFrameCount, rollbackAction, staleSubjects, variableValues, variantDocument } from "@cassie/harness";
 import type { DocumentEdit, EventDocument, Variant } from "@cassie/spec";
+import { addVideoSource, prepareVideoEvidence, readEvidenceFrame, submitVideoAnalysis, submitVideoGrounding, loadUnderstandingConfig } from "./understanding-workflow";
+import { analyzeVideo, groundVideo } from "./analyze";
+import { loadAnalysis, loadGrounding } from "./analyze";
 import { readWorkspace, updateWorkspace } from "./store";
+import { previewGroundedRecolor, applyGroundedRecolor } from "./grounded-recolor";
 import { renderVideo } from "./render";
 import { trackConcept } from "./concept";
 import { planSubjectSync, runSubjectSync, type SubjectProvider } from "./subject-sync";
@@ -30,6 +34,8 @@ export interface AgentTool {
   inputSchema: Record<string, unknown>;
   /** Spends money on an external provider; callers must get a human yes before passing `confirmed`. */
   paid?: boolean;
+  /** Tool may transmit data to a host-configured external service. */
+  external?: boolean;
   run(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult>;
 }
 
@@ -55,6 +61,7 @@ function overview(d: EventDocument) {
   const tally = (pick: (v: Variant) => string) => items.reduce<Record<string, number>>((acc, v) => ({ ...acc, [pick(v)]: (acc[pick(v)] ?? 0) + 1 }), {});
   return {
     revision: d.editor.revision,
+    videoSources: Object.values(d.editor.assets).filter(a => a.kind === "video" && d.media[a.id]).map(a => ({ id: a.id, name:a.name, durationUs:a.durationUs })),
     canvas: `${d.editor.settings.width}x${d.editor.settings.height}`,
     fps: d.frameRate.num / d.frameRate.den,
     frames: resolveFrameCount(d),
@@ -133,6 +140,71 @@ export async function closeAgentBrowser() {
 
 export const AGENT_TOOLS: AgentTool[] = [
   {
+    name: "add_video_source",
+    description: "Import a local <=15s CFR video by absolute path into this project's source library. No upload dialog or browser is needed. This is undoable and does not add footage to the timeline.",
+    inputSchema: obj({sourcePath:str("Local absolute path to source video")},["sourcePath"]),
+    run: async (ctx,args)=>json(await addVideoSource(ctx.file,String(args.sourcePath))),
+  },
+  {
+    name: "prepare_video_evidence",
+    description: "Prepare a local evidence bundle: source hash, frame domain, source path, actual sampled JPEG paths and manifest. No model or browser required. Omit range for initial whole-video observation; use a focused range and fps=8 to inspect an action. Read the images yourself, then submit_video_analysis or submit_video_grounding.",
+    inputSchema: obj({assetId:str("Source asset id"),startFrame:{type:"integer",minimum:0},endFrame:{type:"integer",minimum:1},fps:{type:"number",minimum:1,maximum:12}},["assetId"]),
+    run: async (ctx,args)=>{
+      if((args.startFrame===undefined)!==(args.endFrame===undefined))throw new Error("Provide both source frame boundaries");
+      return json(await prepareVideoEvidence(ctx.file,String(args.assetId),args.startFrame===undefined?undefined:{startFrame:Number(args.startFrame),endFrame:Number(args.endFrame)},args.fps===undefined?2:Number(args.fps)));
+    },
+  },
+  {
+    name: "read_evidence_frame",
+    description: "Return one actually prepared source JPEG as an MCP image. No browser state or HTTP preview is used. Read enough ordered frames to support motion claims.",
+    inputSchema: obj({bundleId:str("Evidence bundle id"),sourceFrame:{type:"integer",minimum:0}},["bundleId","sourceFrame"]),
+    run: async (ctx,args)=>{const frame=await readEvidenceFrame(ctx.file,String(args.bundleId),Number(args.sourceFrame));return {text:JSON.stringify({sourceFrame:frame.sourceFrame,source:frame.source}),image:{data:frame.data,mimeType:frame.mimeType}};},
+  },
+  {
+    name: "submit_video_analysis",
+    description: "Record the agent's observations after reading a full-source evidence bundle. Schema validates ids, ranges and actual evidence frames. Observations remain proposed, not verified facts. Does not edit timeline or history. Shape: summary, entities[{id,name,description,visibleRanges[{startFrame,endFrame}],evidenceFrames}], events[{id,entityIds,description,range,evidenceFrames,uncertainty}], uncertainties[string].",
+    inputSchema: obj({bundleId:str("Full-source evidence bundle id"),observations:{type:"object"},model:str("Provenance label, e.g. external-agent")},["bundleId","observations"]),
+    run: async (ctx,args)=>json(await submitVideoAnalysis(ctx.file,String(args.bundleId),args.observations,args.model?String(args.model):undefined)),
+  },
+  {
+    name: "submit_video_grounding",
+    description: "Record a target binding after the agent re-inspects evidence. Result: {status:resolved|ambiguous|not_found,explanation,candidates:[{eventId:string|null,entityIds,range:{startFrame,endFrame},evidenceFrames,reason}]}. Binding references an analysis revision and source hash; it never executes edits. Preserve ambiguity rather than guessing.",
+    inputSchema: obj({bundleId:str("Evidence bundle id"),analysisId:str("Current analysis id"),query:str("Original user request"),result:{type:"object"}},["bundleId","analysisId","query","result"]),
+    run: async (ctx,args)=>json(await submitVideoGrounding(ctx.file,String(args.bundleId),String(args.analysisId),String(args.query),args.result)),
+  },
+  {
+    name:"analyze_video",
+    external:true,
+    description:"Optional host-configured vision-provider adapter for <=15s sources. Uses CASSIE_UNDERSTANDING_CONFIG or CASSIE_VISION_* on the host, not browser settings. Sends sampled images to that provider; use native evidence tools instead when the agent supplies vision itself.",
+    inputSchema:obj({assetId:str("Source asset id")},["assetId"]),
+    run:async(ctx,args)=>json(await analyzeVideo(ctx.file,String(args.assetId),await loadUnderstandingConfig())),
+  },
+  {
+    name:"ground_video",
+    external:true,
+    description:"Optional host-configured vision-provider grounding with candidate re-inspection. No browser required. Sends sampled images to the host's configured provider.",
+    inputSchema:obj({assetId:str("Source asset id"),analysisId:str("Current analysis id"),query:str("Original user request")},["assetId","analysisId","query"]),
+    run:async(ctx,args)=>json(await groundVideo(ctx.file,String(args.assetId),String(args.analysisId),String(args.query),await loadUnderstandingConfig())),
+  },
+  {
+    name: "read_video_analysis",
+    description: "Read source-video observations and latest query grounding from local project files. These are source-frame observations, not timeline event ids or edit instructions. Model observations remain proposals. If absent, use prepare_video_evidence + native vision + submit_video_analysis, or the optional analyze_video adapter. Never ask the user to click through a browser workflow.",
+    inputSchema: obj({ assetId: str("Video source asset id from project_overview") }, ["assetId"]),
+    run: async (ctx,args) => json({ analysis: await loadAnalysis(ctx.file,String(args.assetId)), grounding: await loadGrounding(ctx.file,String(args.assetId)) }),
+  },
+  {
+    name: "preview_grounded_recolor",
+    description: "Render a local recolor preview from the current resolved grounding, a source-aligned grayscale matte for its exact frame range, and a hex color. Does not change the project. Inspect the resulting MP4 before applying.",
+    inputSchema: obj({script: {type: "object", description: "cassie/grounded-recolor@1: sourceAssetId, layerId, groundingId, targetEntityId, mask {path,sha256}, color"}}, ["script"]),
+    run: async (ctx, args) => json(await previewGroundedRecolor(ctx.file, args.script)),
+  },
+  {
+    name: "apply_grounded_recolor",
+    description: "Commit a reviewed local recolor preview as one undoable edit. Rejects stale project revisions, changed media and unresolved grounding.",
+    inputSchema: obj({previewId: str("From preview_grounded_recolor")}, ["previewId"]),
+    run: async (ctx, args) => json(await applyGroundedRecolor(ctx.file, String(args.previewId))),
+  },
+  {
     name: "project_overview",
     description: "Read the project: revision, canvas, events with frame ranges, layers, subjects, text variables, subject references and a variant summary. Call this first.",
     inputSchema: obj({}),
@@ -170,9 +242,11 @@ export const AGENT_TOOLS: AgentTool[] = [
     description: "Apply one typed edit and save it as an undoable transaction. Pass the revision you last read so a concurrent human edit is never overwritten.",
     inputSchema: obj({ edit: { type: "object", description: "A typed edit, see edit_reference" }, baseRevision: { type: "integer" } }, ["edit", "baseRevision"]),
     run: async (ctx, args) => {
+      const edit = args.edit as DocumentEdit;
+      if (edit?.kind === "apply-grounded-recolor") throw new EventError("PREVIEW_REQUIRED", "Use apply_grounded_recolor with a preview id");
       const ws = await updateWorkspace(ctx.file, ws => {
         if (ws.document.editor.revision !== args.baseRevision) throw new EventError("STALE_PLAN", `Project is at revision ${ws.document.editor.revision}, not ${args.baseRevision}; re-read and retry`);
-        return applyDocumentEdit(ws, planDocumentEdit(ws.document, args.edit as DocumentEdit));
+        return applyDocumentEdit(ws, planDocumentEdit(ws.document, edit));
       });
       const tx = ws.transactions.at(-1)!;
       return json({ ok: true, revision: ws.document.editor.revision, transactionId: tx.id });
@@ -374,3 +448,6 @@ export async function callAgentTool(ctx: ToolContext, name: string, args: Record
 }
 
 export const toolManifest = () => AGENT_TOOLS.map(({ name, description, inputSchema, paid }) => ({ name, description, inputSchema, ...(paid ? { paid } : {}) }));
+
+const VARIANT_TOOLS=new Set(["list_variants","locate_variant","subject_sync_quote","subject_sync"]);
+export const shortVideoAgentTools=()=>AGENT_TOOLS.filter(t=>!VARIANT_TOOLS.has(t.name));

@@ -1,3 +1,4 @@
+import { providerWorkbench } from "../lib/workspace-mode";
 import { exportVideo } from "../export";
 import { renderOnServer } from "../lib/model-client";
 import {
@@ -15,6 +16,7 @@ export function Topbar() {
   const project = state.adapter.getProject();
   const durationSec = (project.settings.durationUs / 1e6).toFixed(0);
   const history = state.adapter.getHistory();
+  const showProject = Boolean(state.runtime) || (providerWorkbench && state.booted);
   const runtimeUndo = Boolean(state.runtime?.workspace.transactions.some((t) => t.status === "committed"));
 
   const handleExport = async () => {
@@ -58,54 +60,54 @@ export function Topbar() {
   return (
     <header className="topbar">
       <div className="brand">
-        <img className="brand-mark" src="/brand/logo-64.png" alt="Cassie" width={28} height={28} />
+        {providerWorkbench && <img className="brand-mark" src="/brand/logo-64.png" alt="" width={28} height={28} />}
         <div className="brand-copy">
           <strong>Cassie</strong>
-          <span>Semantic Video Editor</span>
+          {providerWorkbench && <span>Semantic Video Editor</span>}
         </div>
       </div>
-      <div className="project-meta">
-        <span className="project-title">Projects / {project.name}</span>
+      {showProject && <div className="project-meta">
+        <span className="project-title">{project.name}</span>
         <span>·</span>
         <span>
           {durationSec}s / {project.settings.width}:{project.settings.height}
         </span>
         <span className="autosave">● 已保存</span>
-      </div>
-      <nav className="mode-switch" aria-label="工作模式">
+      </div>}
+      {providerWorkbench && <nav className="mode-switch" aria-label="工作模式">
         <button onClick={() => setToast("故事板模式：v2 规划中")}>故事板</button>
         <button className="active">导演画布</button>
         <button onClick={() => setToast("成片模式：先导出 MP4 或在 v2 中直接交付")}>成片</button>
-      </nav>
+      </nav>}
       <div className="top-actions">
         <button
           className="ghost-btn"
           onClick={() => undo()}
-          disabled={state.runtime ? !runtimeUndo || Boolean(state.busy) : !history.past}
-          title="撤销 (⌘Z)"
+          disabled={!showProject || (state.runtime ? !runtimeUndo || Boolean(state.busy) : !history.past)}
+          aria-label="撤销" title="撤销 (⌘Z)"
         >
           ↶
         </button>
-        <button
+        {!state.runtime && providerWorkbench && <button
           className="ghost-btn"
           onClick={() => redo()}
           disabled={state.runtime ? true : !history.future}
-          title={state.runtime ? "运行时工程暂不支持重做" : "重做"}
+          aria-label="重做" title={state.runtime ? "运行时工程暂不支持重做" : "重做"}
         >
           ↷
-        </button>
-        <button
+        </button>}
+        {providerWorkbench && <button
           className="ghost-btn parse-mode-chip"
           title={state.parseMode === "llm" ? "意图解析：用户配置的 LLM" : "意图解析：本地确定性（未配置模型）"}
           onClick={() => setSettingsOpen(true)}
         >
           {state.parseMode === "llm" ? "⚡ LLM" : "▣ 本地解析"}
-        </button>
-        <button className="ghost-btn version-chip">版本 {String(project.revision).padStart(2, "0")}</button>
-        <button className="ghost-btn" onClick={() => setSettingsOpen(true)} title="模型设置（BYOK）">
+        </button>}
+        {providerWorkbench && <span className="version-chip">版本 {String(project.revision).padStart(2, "0")}</span>}
+        {providerWorkbench && <button className="ghost-btn" onClick={() => setSettingsOpen(true)} title="模型设置（BYOK）">
           ⚙ 模型
-        </button>
-        <button className="primary-btn" onClick={() => void handleExport()} disabled={state.exporting}>
+        </button>}
+        <button className="primary-btn" onClick={() => void handleExport()} disabled={!showProject || state.exporting || Boolean(state.busy)}>
           {state.exporting ? "渲染中…" : "导出成片"}
         </button>
       </div>

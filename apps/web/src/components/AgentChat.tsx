@@ -3,6 +3,7 @@ import { clearAgent, sendAgentMessage, setSettingsOpen, stopAgent, useAppState }
 import type { AgentMessage } from "../lib/agent";
 
 const TOOL_LABEL: Record<string, string> = {
+  read_video_analysis: "读取短片理解与定位证据",
   project_overview: "读取工程",
   list_variants: "查看变体",
   edit_reference: "查阅编辑类型",
@@ -21,9 +22,9 @@ const TOOL_LABEL: Record<string, string> = {
 };
 
 const SUGGESTIONS = [
-  "检查每个画幅的片尾 CTA 有没有被遮挡或裁切",
-  "把韩国市场的 CTA 改成「지금 예약하세요」，并截图确认",
-  "列出所有待审和被打回的变体，说明原因",
+  "查看当前视频工程的片段和已跟踪对象",
+  "检查当前时间线上的文字有没有遮挡主体",
+  "列出最近的修改记录，说明哪些可以撤销",
 ];
 
 function callSummary(name: string, args: Record<string, unknown>): string {
@@ -112,7 +113,7 @@ export function AgentChat() {
         <textarea
           value={draft}
           rows={2}
-          placeholder={configured ? "例如：日本竖版的 CTA 往下挪，别压住手机" : "先在模型设置里配置语义模型"}
+          placeholder={configured ? "例如：把文字往下挪，别压住主体" : "先在模型设置里配置语义模型"}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

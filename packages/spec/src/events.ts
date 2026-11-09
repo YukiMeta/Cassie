@@ -40,12 +40,24 @@ export interface ResolvedEvent {
   text?: string;
   disabledReason?: string;
 }
+export interface GroundedRecolor {
+  assetId: string;
+  sourceSha256: string;
+  groundingId: string;
+  targetEntityId: string;
+  startFrame: number;
+  endFrame: number;
+  maskSha256: string;
+  color: string;
+}
 export interface VisualLayer {
   id: string;
   entityId: string;
   kind: "person" | "card" | "text" | "video";
   eventId?: string;
   assetId?: string;
+  /** Source-aligned composite for this layer; the original clip stays addressable for evidence. */
+  groundedRecolor?: GroundedRecolor;
   x: number;
   y: number;
   width: number;
@@ -210,6 +222,8 @@ export interface ActionEdit {
   durationFrames?: number;
 }
 export type DocumentEdit =
+  | { kind: "apply-grounded-recolor"; layerId: string; recolor: GroundedRecolor; asset: MediaAsset; media: MediaReference }
+  | { kind: "attach-analysis-source"; asset: MediaAsset; media: MediaReference }
   | { kind: "attach-subject-matte"; eventId: string; matte: SubjectMatte; asset: MediaAsset; media: MediaReference }
   | { kind: "track-region"; region: SubjectRegion; name?: string }
   /** Locates a master-tracked subject in one variant's take and records its region on the variant. */
